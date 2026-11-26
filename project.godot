@@ -24,3 +24,14 @@ limits/debugger/max_chars_per_second=32768
 [rendering]
 
 anti_aliasing/quality/msaa_3d=2
+
+[shader_globals]
+
+bloom_radius={
+"type": "float",
+"value": 0.0
+}
+bloom_center={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}

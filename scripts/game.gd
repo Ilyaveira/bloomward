@@ -9,6 +9,7 @@ extends Node3D
 ## ATTENTION SURPRISE : ce fichier contient la logique de l'énigme.
 
 const PlayerScript := preload("res://scripts/player.gd")
+const WorldScript := preload("res://scripts/world.gd")
 
 const STONE_COUNT := 4
 const SYMBOL_COUNT := 4
@@ -31,9 +32,6 @@ const STONE_BANDS := [
 	Color(0.95, 0.70, 0.30),  # ambre
 ]
 
-const DRY_GROUND := Color(0.76, 0.66, 0.50)
-const LUSH_GROUND := Color(0.40, 0.58, 0.30)
-const DRY_LEAVES := Color(0.72, 0.54, 0.36)
 
 var autotest := false
 var solo := false
@@ -57,16 +55,7 @@ var players_root: Node3D
 var spawner: MultiplayerSpawner
 var stones: Array = []          # [{root, emblem_holder, hint_holder}]
 var pads: Array = []            # MeshInstance3D
-var env: Environment
-var sky_mat: ProceduralSkyMaterial
-var ground_mat: StandardMaterial3D
-var hill_mat: StandardMaterial3D
-var foliage: Array = []         # [{node, mat, color}]
-var grass: MultiMeshInstance3D
-var flowers: MultiMeshInstance3D
-var water: MeshInstance3D
-var stream: MeshInstance3D
-var pollen: CPUParticles3D
+var world: Node3D
 var restore_t := 0.0
 
 # --- Interface ---
@@ -80,12 +69,12 @@ var _t := 0.0
 
 
 func _ready() -> void:
-	_build_environment()
-	_build_terrain()
-	_build_trees()
-	_build_spring()
+	world = Node3D.new()
+	world.set_script(WorldScript)
+	world.name = "World"
+	add_child(world)
+	_build_pads()
 	_build_stones()
-	_build_vegetation()
 	_build_hud()
 
 	players_root = Node3D.new()
@@ -133,7 +122,8 @@ func _add_player(id: int) -> void:
 	_join_order.append(id)
 	var index := _join_order.size() - 1
 	var angle := index * 0.9
-	var pos := Vector3(sin(angle) * 14.0, 0.2, cos(angle) * 14.0 + 4.0)
+	var pos := Vector3(sin(angle) * 3.0, 0.0, 16.0 + cos(angle) * 1.5)
+	pos.y = Terrain.height(pos.x, pos.z) + 0.4
 	spawner.spawn({"id": id, "index": index, "pos": pos})
 	_assign_roles()
 	if id != 1:
@@ -261,7 +251,7 @@ func _physics_process(delta: float) -> void:
 	for p in players_root.get_children():
 		for j in 2:
 			var d := Vector2(p.position.x - PAD_POSITIONS[j].x, p.position.z - PAD_POSITIONS[j].z).length()
-			if d < PAD_RADIUS and p.position.y < 1.5:
+			if d < PAD_RADIUS and p.position.y - Terrain.height(PAD_POSITIONS[j].x, PAD_POSITIONS[j].z) < 1.5:
 				occupied[j] = true
 	if occupied != _pad_last:
 		_pad_last = occupied
@@ -311,156 +301,60 @@ func _local_player() -> Node3D:
 #  Construction du décor (déterministe : identique chez tous les joueurs)
 # =====================================================================
 
-func _build_environment() -> void:
-	var we := WorldEnvironment.new()
-	env = Environment.new()
-	sky_mat = ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.42, 0.62, 0.86)
-	sky_mat.sky_horizon_color = Color(0.93, 0.86, 0.76)
-	sky_mat.ground_horizon_color = Color(0.93, 0.86, 0.76)
-	sky_mat.ground_bottom_color = Color(0.55, 0.50, 0.45)
-	sky_mat.sun_angle_max = 20.0
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.75
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_exposure = 0.92
-	env.glow_enabled = true
-	env.glow_intensity = 0.5
-	env.glow_bloom = 0.05
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.90, 0.86, 0.80)
-	env.fog_density = 0.006
-	env.fog_sky_affect = 0.3
-	env.adjustment_enabled = true
-	we.environment = env
-	add_child(we)
-
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-48, -35, 0)
-	sun.light_color = Color(1.0, 0.95, 0.86)
-	sun.light_energy = 1.25
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 70.0
-	add_child(sun)
-
-func _build_terrain() -> void:
-	ground_mat = Style.toon(DRY_GROUND, 0.0)
-	var ground := StaticBody3D.new()
-	var mesh := Style.cylinder(42.0, 42.0, 1.0, 48)
-	ground.add_child(Style.mesh_instance(mesh, ground_mat, Vector3(0, -0.5, 0)))
-	var col := CollisionShape3D.new()
-	var shape := CylinderShape3D.new()
-	shape.radius = 42.0
-	shape.height = 1.0
-	col.shape = shape
-	col.position.y = -0.5
-	ground.add_child(col)
-	add_child(ground)
-
-	var rng := RandomNumberGenerator.new()
-	rng.seed = WORLD_SEED
-	# Collines qui ferment la clairière
-	hill_mat = Style.toon(Color(0.78, 0.68, 0.54), 0.06)
-	for i in 22:
-		var a := TAU * i / 22.0 + rng.randf_range(-0.08, 0.08)
-		var r := rng.randf_range(31.0, 35.0)
-		var h := Style.mesh_instance(Style.sphere(1.0, 12), hill_mat, Vector3(sin(a) * r, -1.0, cos(a) * r))
-		var s := rng.randf_range(5.0, 8.0)
-		h.scale = Vector3(s * 1.3, rng.randf_range(3.0, 6.5), s)
-		h.rotation.y = a
-		add_child(h)
-	# Montagnes lointaines, adoucies par la brume
-	var far_mat := Style.toon(Color(0.66, 0.70, 0.78), 0.0)
-	for i in 14:
-		var a := TAU * i / 14.0 + rng.randf_range(-0.1, 0.1)
-		var r := rng.randf_range(80.0, 100.0)
-		var m := Style.mesh_instance(Style.cylinder(0.0, rng.randf_range(14.0, 24.0), rng.randf_range(18.0, 34.0), 7), far_mat, Vector3(sin(a) * r, 6.0, cos(a) * r))
-		add_child(m)
-	# Rochers épars
-	var rock_mat := Style.toon(Color(0.74, 0.71, 0.66), 0.03)
-	for i in 18:
-		var a := rng.randf() * TAU
-		var r := rng.randf_range(10.0, 25.0)
-		var rock := Style.mesh_instance(Style.sphere(1.0, 7), rock_mat, Vector3(sin(a) * r, 0.0, cos(a) * r))
-		var s := rng.randf_range(0.3, 0.8)
-		rock.scale = Vector3(s * 1.4, s * 0.8, s)
-		rock.rotation.y = rng.randf() * TAU
-		add_child(rock)
-
-func _build_trees() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = WORLD_SEED + 1
-	var trunk_mat := Style.toon(Color(0.52, 0.40, 0.32), 0.03)
-	var greens := [Color(0.36, 0.62, 0.30), Color(0.45, 0.70, 0.32), Color(0.30, 0.55, 0.38), Color(0.55, 0.72, 0.30)]
-	for i in 16:
-		var a := TAU * i / 16.0 + rng.randf_range(-0.15, 0.15)
-		var r := rng.randf_range(13.0, 24.0)
-		var tree := Node3D.new()
-		tree.position = Vector3(sin(a) * r, 0, cos(a) * r)
-		tree.rotation.y = rng.randf() * TAU
-		var h := rng.randf_range(2.4, 3.6)
-		tree.add_child(Style.mesh_instance(Style.cylinder(0.12, 0.24, h, 8), trunk_mat, Vector3(0, h * 0.5, 0)))
-		var green: Color = greens[rng.randi() % greens.size()]
-		for k in 3:
-			var mat := Style.toon(DRY_LEAVES, 0.03)
-			var crown := Style.mesh_instance(Style.sphere(rng.randf_range(0.9, 1.3), 9), mat,
-				Vector3(rng.randf_range(-0.5, 0.5), h + rng.randf_range(-0.2, 0.7), rng.randf_range(-0.5, 0.5)))
-			tree.add_child(crown)
-			foliage.append({"node": crown, "mat": mat, "color": green.lightened(rng.randf_range(-0.05, 0.1))})
-		add_child(tree)
-
-func _build_spring() -> void:
-	# Bassin de pierres
-	var rim_mat := Style.toon(Color(0.80, 0.77, 0.70), 0.03)
-	for i in 12:
-		var a := TAU * i / 12.0
-		var rock := Style.mesh_instance(Style.sphere(0.55, 7), rim_mat, Vector3(sin(a) * 2.5, 0.05, cos(a) * 2.5))
-		rock.scale = Vector3(1.2, 0.6, 0.9)
-		rock.rotation.y = a
-		add_child(rock)
-	var bed := Style.mesh_instance(Style.cylinder(2.3, 2.3, 0.1, 24), Style.toon(Color(0.60, 0.52, 0.42), 0.0), Vector3(0, 0.02, 0))
-	add_child(bed)
-	water = Style.mesh_instance(Style.cylinder(2.3, 2.3, 0.1, 24), Style.glow(Color(0.45, 0.75, 0.95), 0.4, 0.75), Vector3(0, -0.3, 0))
-	add_child(water)
-	# Ruisseau vers le bord de la clairière
-	stream = Style.mesh_instance(Style.box(Vector3(1.0, 0.06, 24.0)), Style.glow(Color(0.45, 0.75, 0.95), 0.4, 0.7), Vector3(0, 0.03, -14.5))
-	add_child(stream)
-	# Dalles
+func _build_pads() -> void:
+	# Dalles gravées, de part et d'autre de la source
+	var slab := Style.toon(Color(0.80, 0.76, 0.68))
+	var groove := Style.toon(Color(0.66, 0.62, 0.56))
 	for j in 2:
-		var pad := Style.mesh_instance(Style.cylinder(PAD_RADIUS, PAD_RADIUS + 0.1, 0.12, 20), Style.toon(Color(0.86, 0.82, 0.74), 0.02), PAD_POSITIONS[j] + Vector3(0, 0.06, 0))
+		var p: Vector3 = PAD_POSITIONS[j]
+		var pad := Style.mesh_instance(Style.cylinder(PAD_RADIUS, PAD_RADIUS + 0.12, 0.16, 8), slab, p + Vector3(0, Terrain.height(p.x, p.z) + 0.06, 0))
+		pad.rotation.y = PI / 8.0
 		pad.set_meta("occupied", false)
+		var inlay := TorusMesh.new()
+		inlay.inner_radius = PAD_RADIUS * 0.58
+		inlay.outer_radius = PAD_RADIUS * 0.68
+		var engraved := Style.mesh_instance(inlay, groove, Vector3(0, 0.07, 0))
+		engraved.scale = Vector3(1, 0.15, 1)
+		pad.add_child(engraved)
 		var ring := TorusMesh.new()
 		ring.inner_radius = PAD_RADIUS * 0.6
 		ring.outer_radius = PAD_RADIUS * 0.72
-		var glow := Style.mesh_instance(ring, Style.glow(Color(1.0, 0.85, 0.5), 2.0, 0.9), Vector3(0, 0.08, 0))
+		var glow := Style.mesh_instance(ring, Style.glow(Color(1.0, 0.85, 0.5), 2.2, 0.9), Vector3(0, 0.1, 0))
 		glow.name = "Glow"
 		pad.add_child(glow)
 		add_child(pad)
 		pads.append(pad)
 
 func _build_stones() -> void:
-	var stone_mat := Style.toon(Color(0.86, 0.83, 0.77), 0.03)
+	# Monolithes taillés, chacun repérable par sa bande de couleur
+	var stone_mat := Style.toon(Color(0.82, 0.78, 0.70))
+	var dark := Style.toon(Color(0.66, 0.62, 0.56))
 	for i in STONE_COUNT:
 		var a := TAU * i / STONE_COUNT + PI / 4.0
 		var root := Node3D.new()
-		root.position = Vector3(sin(a) * STONE_RING, 0, cos(a) * STONE_RING)
+		var x := sin(a) * STONE_RING
+		var z := cos(a) * STONE_RING
+		root.position = Vector3(x, Terrain.height(x, z), z)
 		root.rotation.y = a
-		var body := Style.mesh_instance(Style.box(Vector3(0.9, 2.2, 0.6)), stone_mat, Vector3(0, 1.1, 0))
-		body.rotation.z = 0.04 * (i - 1.5)
+		root.add_child(Style.mesh_instance(Style.cylinder(1.0, 1.15, 0.25, 8), dark, Vector3(0, 0.08, 0)))
+		var body := Style.mesh_instance(Style.cylinder(0.36, 0.55, 2.3, 4), stone_mat, Vector3(0, 1.3, 0))
+		body.rotation.y = PI / 4.0
+		body.rotation.z = 0.03 * (i - 1.5)
 		root.add_child(body)
-		var band := Style.mesh_instance(Style.box(Vector3(0.96, 0.22, 0.66)), Style.toon(STONE_BANDS[i], 0.02), Vector3(0, 0.45, 0))
+		root.add_child(Style.mesh_instance(Style.cylinder(0.5, 0.42, 0.22, 4), dark, Vector3(0, 2.52, 0)))
+		root.get_child(-1).rotation.y = PI / 4.0
+		var band_mat := Style.toon(STONE_BANDS[i])
+		band_mat.emission_enabled = true
+		band_mat.emission = STONE_BANDS[i]
+		band_mat.emission_energy_multiplier = 0.35
+		var band := Style.mesh_instance(Style.cylinder(0.53, 0.56, 0.2, 4), band_mat, Vector3(0, 0.55, 0))
+		band.rotation.y = PI / 4.0
 		root.add_child(band)
-		var base := Style.mesh_instance(Style.cylinder(0.7, 0.8, 0.2, 10), stone_mat, Vector3(0, 0.1, 0))
-		root.add_child(base)
 		var emblem_holder := Node3D.new()
-		emblem_holder.position = Vector3(0, 2.75, 0)
+		emblem_holder.position = Vector3(0, 3.05, 0)
 		root.add_child(emblem_holder)
 		var hint_holder := Node3D.new()
-		hint_holder.position = Vector3(0, 4.0, 0)
+		hint_holder.position = Vector3(0, 4.2, 0)
 		hint_holder.visible = false
 		root.add_child(hint_holder)
 		add_child(root)
@@ -470,7 +364,7 @@ func _build_stones() -> void:
 func _make_emblem(symbol: int, ghost: bool) -> Node3D:
 	var n := Node3D.new()
 	var c: Color = SYMBOL_COLORS[symbol]
-	var mat: Material = Style.glow(c, 1.6, 0.55) if ghost else Style.toon(c, 0.02)
+	var mat: Material = Style.glow(c, 1.6, 0.55) if ghost else Style.toon(c)
 	match symbol:
 		0:  # feuille
 			var leaf := Style.mesh_instance(Style.sphere(0.32, 12), mat)
@@ -514,95 +408,10 @@ func _refresh_hints() -> void:
 		if my_hints.has(i):
 			holder.add_child(_make_emblem(int(my_hints[i]), true))
 
-func _build_vegetation() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = WORLD_SEED + 2
-	# Herbe
-	var blade := PrismMesh.new()
-	blade.size = Vector3(0.08, 0.32, 0.03)
-	var gm := Style.toon(Color(1, 1, 1), 0.0)
-	gm.vertex_color_use_as_albedo = true
-	blade.material = gm
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = blade
-	mm.instance_count = 6000
-	for i in mm.instance_count:
-		var p := _random_meadow_point(rng)
-		var t := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.4)), Vector3(p.x, 0.14, p.y))
-		mm.set_instance_transform(i, t)
-		mm.set_instance_color(i, Color(0.34, 0.55, 0.26).lightened(rng.randf_range(-0.08, 0.15)))
-	grass = MultiMeshInstance3D.new()
-	grass.multimesh = mm
-	add_child(grass)
-	# Fleurs
-	var bloom := Style.sphere(0.09, 8)
-	var fm := Style.toon(Color(1, 1, 1), 0.0)
-	fm.vertex_color_use_as_albedo = true
-	fm.emission_enabled = true
-	fm.emission = Color(0.15, 0.12, 0.1)
-	bloom.material = fm
-	var fmm := MultiMesh.new()
-	fmm.transform_format = MultiMesh.TRANSFORM_3D
-	fmm.use_colors = true
-	fmm.mesh = bloom
-	fmm.instance_count = 500
-	var petals := [Color(0.98, 0.62, 0.70), Color(1.0, 0.97, 0.92), Color(1.0, 0.85, 0.35), Color(0.75, 0.62, 0.95), Color(0.98, 0.55, 0.40)]
-	for i in fmm.instance_count:
-		var p := _random_meadow_point(rng)
-		fmm.set_instance_transform(i, Transform3D(Basis(), Vector3(p.x, 0.32, p.y)))
-		fmm.set_instance_color(i, petals[rng.randi() % petals.size()])
-	flowers = MultiMeshInstance3D.new()
-	flowers.multimesh = fmm
-	add_child(flowers)
-	# Pollen lumineux
-	pollen = CPUParticles3D.new()
-	pollen.amount = 160
-	pollen.lifetime = 6.0
-	pollen.emitting = false
-	pollen.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	pollen.emission_box_extents = Vector3(20, 1.5, 20)
-	pollen.position = Vector3(0, 1.5, 0)
-	pollen.gravity = Vector3(0, 0.05, 0)
-	pollen.initial_velocity_min = 0.1
-	pollen.initial_velocity_max = 0.4
-	pollen.direction = Vector3(0.3, 1, 0.1)
-	pollen.spread = 60.0
-	var pm := Style.sphere(0.035, 6)
-	pm.material = Style.glow(Color(1.0, 0.95, 0.7), 2.5, 0.9)
-	pollen.mesh = pm
-	add_child(pollen)
-
-func _random_meadow_point(rng: RandomNumberGenerator) -> Vector2:
-	while true:
-		var a := rng.randf() * TAU
-		var r := sqrt(rng.randf()) * 27.0
-		var p := Vector2(sin(a) * r, cos(a) * r)
-		# Pas d'herbe dans le bassin ni sur le ruisseau
-		if p.length() > 3.2 and not (abs(p.x) < 0.8 and p.y < -2.0):
-			return p
-	return Vector2.ZERO
-
 ## Applique l'état de restauration t (0 = flétri, 1 = restauré). Identique chez tous.
 func _apply_restore(t: float) -> void:
 	restore_t = t
-	ground_mat.albedo_color = DRY_GROUND.lerp(LUSH_GROUND, t)
-	hill_mat.albedo_color = Color(0.78, 0.68, 0.54).lerp(Color(0.56, 0.66, 0.42), clampf(t * 1.2 - 0.2, 0.0, 1.0))
-	env.adjustment_saturation = lerp(0.7, 1.0, t)
-	env.adjustment_brightness = 1.0
-	sky_mat.sky_top_color = Color(0.55, 0.66, 0.80).lerp(Color(0.36, 0.60, 0.92), t)
-	for f in foliage:
-		var k := clampf(t * 1.3, 0.0, 1.0)
-		f["node"].scale = Vector3.ONE * lerp(0.45, 1.0, k)
-		f["mat"].albedo_color = DRY_LEAVES.lerp(f["color"], k)
-	grass.multimesh.visible_instance_count = int(t * grass.multimesh.instance_count)
-	flowers.multimesh.visible_instance_count = int(clampf(t * 1.4 - 0.4, 0.0, 1.0) * flowers.multimesh.instance_count)
-	water.position.y = lerp(-0.3, 0.09, clampf(t * 2.0, 0.0, 1.0))
-	stream.scale = Vector3(1, 1, maxf(clampf(t * 1.6 - 0.3, 0.0, 1.0), 0.001))
-	stream.position.z = -2.5 - 12.0 * stream.scale.z
-	stream.visible = t > 0.2
-	pollen.emitting = t > 0.5
+	world.apply_restore(t)
 
 
 # =====================================================================
@@ -615,7 +424,7 @@ func _animate_world(delta: float) -> void:
 		e.rotation.y += delta * 0.8
 		var h: Node3D = stones[i]["hint_holder"]
 		h.rotation.y -= delta * 0.6
-		h.position.y = 4.0 + sin(_t * 1.6 + i) * 0.12
+		h.position.y = 4.2 + sin(_t * 1.6 + i) * 0.12
 	for pad in pads:
 		var g: MeshInstance3D = pad.get_node("Glow")
 		var on: bool = aligned and not solved
@@ -754,4 +563,4 @@ func _autotest_act() -> void:
 	print("AUTOTEST: pierres réglées par le pair %d : %s" % [multiplayer.get_unique_id(), str(stone_state)])
 	# 3) Monter sur une dalle.
 	var pad_i := 0 if multiplayer.is_server() else 1
-	me.teleport(PAD_POSITIONS[pad_i] + Vector3(0, 0.3, 0))
+	me.teleport(PAD_POSITIONS[pad_i] + Vector3(0, Terrain.height(PAD_POSITIONS[pad_i].x, PAD_POSITIONS[pad_i].z) + 0.4, 0))

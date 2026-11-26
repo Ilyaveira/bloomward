@@ -11,6 +11,7 @@ extends Node
 ##   --debug-restore   affiche directement la zone restaurée (pour les captures)
 
 const GameScript := preload("res://scripts/game.gd")
+const WorldScript := preload("res://scripts/world.gd")
 const PORT := 7777
 const MAX_CLIENTS := 3
 
@@ -19,10 +20,16 @@ var status_label: Label
 var ip_edit: LineEdit
 var game: Node3D
 var autotest := false
+var preview: Node3D
+var preview_cam: Camera3D
+var _orbit := 0.0
 
 
 func _ready() -> void:
 	_setup_inputs()
+	WorldScript.light_mode = _load_setting("mode_leger", false)
+	if not "--autotest" in OS.get_cmdline_user_args() and DisplayServer.get_name() != "headless":
+		_build_preview()
 	_build_menu()
 	multiplayer.connected_to_server.connect(_on_connected)
 	multiplayer.connection_failed.connect(_on_connection_failed)
@@ -80,19 +87,39 @@ func _build_menu() -> void:
 	menu.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(menu)
 
-	var bg := ColorRect.new()
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = Color(0.96, 0.92, 0.84)
-	menu.add_child(bg)
+	menu.theme = _make_theme()
+	# Voile léger à gauche pour la lisibilité du panneau
+	var veil := ColorRect.new()
+	veil.set_anchors_preset(Control.PRESET_FULL_RECT)
+	veil.color = Color(0.98, 0.95, 0.88, 0.0)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	menu.add_child(veil)
 
+	var holder := MarginContainer.new()
+	holder.set_anchors_preset(Control.PRESET_LEFT_WIDE)
+	holder.add_theme_constant_override("margin_left", 70)
+	holder.add_theme_constant_override("margin_top", 60)
+	holder.add_theme_constant_override("margin_bottom", 60)
+	menu.add_child(holder)
 	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu.add_child(center)
+	holder.add_child(center)
+
+	var panel := PanelContainer.new()
+	var ps := StyleBoxFlat.new()
+	ps.bg_color = Color(0.99, 0.96, 0.90, 0.88)
+	ps.set_corner_radius_all(22)
+	ps.set_content_margin_all(34)
+	ps.shadow_color = Color(0.25, 0.18, 0.10, 0.18)
+	ps.shadow_size = 18
+	ps.border_color = Color(0.82, 0.72, 0.56, 0.6)
+	ps.set_border_width_all(1)
+	panel.add_theme_stylebox_override("panel", ps)
+	center.add_child(panel)
 
 	var box := VBoxContainer.new()
 	box.custom_minimum_size = Vector2(460, 0)
 	box.add_theme_constant_override("separation", 14)
-	center.add_child(box)
+	panel.add_child(box)
 
 	var title := Label.new()
 	title.text = "Bloomward"
@@ -142,8 +169,82 @@ func _build_menu() -> void:
 	how.add_theme_color_override("font_color", Color(0.40, 0.34, 0.28))
 	box.add_child(how)
 
+	var light := CheckBox.new()
+	light.text = "Mode léger (si le jeu saccade)"
+	light.add_theme_font_size_override("font_size", 17)
+	light.add_theme_color_override("font_color", Color(0.30, 0.26, 0.22))
+	light.add_theme_color_override("font_hover_color", Color(0.20, 0.16, 0.12))
+	light.button_pressed = _load_setting("mode_leger", false)
+	WorldScript.light_mode = light.button_pressed
+	light.toggled.connect(func(on: bool):
+		WorldScript.light_mode = on
+		_save_setting("mode_leger", on))
+	box.add_child(light)
+
 	var quit := _button("Quitter", func(): get_tree().quit())
 	box.add_child(quit)
+
+func _make_theme() -> Theme:
+	var t := Theme.new()
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.36, 0.52, 0.38)
+	normal.set_corner_radius_all(14)
+	normal.set_content_margin_all(10)
+	var hover := normal.duplicate()
+	hover.bg_color = Color(0.43, 0.61, 0.44)
+	var pressed := normal.duplicate()
+	pressed.bg_color = Color(0.29, 0.43, 0.31)
+	var focus := normal.duplicate()
+	focus.draw_center = false
+	focus.border_color = Color(0.96, 0.80, 0.45)
+	focus.set_border_width_all(2)
+	t.set_stylebox("normal", "Button", normal)
+	t.set_stylebox("hover", "Button", hover)
+	t.set_stylebox("pressed", "Button", pressed)
+	t.set_stylebox("focus", "Button", focus)
+	t.set_color("font_color", "Button", Color(0.99, 0.97, 0.92))
+	t.set_color("font_hover_color", "Button", Color(1, 1, 1))
+	t.set_color("font_pressed_color", "Button", Color(0.95, 0.92, 0.85))
+	var field := StyleBoxFlat.new()
+	field.bg_color = Color(1, 0.99, 0.96)
+	field.border_color = Color(0.76, 0.66, 0.52)
+	field.set_border_width_all(1)
+	field.set_corner_radius_all(12)
+	field.set_content_margin_all(10)
+	t.set_stylebox("normal", "LineEdit", field)
+	t.set_stylebox("focus", "LineEdit", field)
+	t.set_color("font_color", "LineEdit", Color(0.22, 0.18, 0.15))
+	for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+		t.set_stylebox(st, "CheckBox", StyleBoxEmpty.new())
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+		t.set_color(c, "CheckBox", Color(0.30, 0.26, 0.22))
+	return t
+
+## Décor du menu : la clairière vue de loin, caméra en lent travelling circulaire.
+func _build_preview() -> void:
+	preview = Node3D.new()
+	preview.name = "Preview"
+	var w := Node3D.new()
+	w.set_script(WorldScript)
+	preview.add_child(w)
+	preview_cam = Camera3D.new()
+	preview_cam.fov = 55.0
+	preview.add_child(preview_cam)
+	add_child(preview)
+	preview_cam.current = true
+
+func _process(delta: float) -> void:
+	if preview and preview_cam:
+		_orbit += delta * 0.03
+		var r := 21.0
+		preview_cam.position = Vector3(sin(_orbit) * r, 5.5, cos(_orbit) * r)
+		preview_cam.look_at(Vector3(0, 1.2, 0))
+
+func _free_preview() -> void:
+	if preview:
+		preview.queue_free()
+		preview = null
+		preview_cam = null
 
 func _button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
@@ -164,6 +265,7 @@ func _spacer(h: int) -> Control:
 # =====================================================================
 
 func _create_game(info: String, solo: bool) -> void:
+	_free_preview()
 	game = Node3D.new()
 	game.set_script(GameScript)
 	game.name = "Game"
@@ -180,9 +282,20 @@ func _start_solo() -> void:
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	_create_game("Partie solo", true)
 	game.server_begin()
-	if "--debug-restore" in OS.get_cmdline_user_args():
+	var dargs := OS.get_cmdline_user_args()
+	if "--debug-restore" in dargs:
 		game.solved = true
 		game._apply_restore(1.0)
+	var vi := dargs.find("--debug-spot")
+	if vi >= 0 and vi + 3 < dargs.size():
+		var p: Node3D = game._local_player()
+		var x := float(dargs[vi + 1])
+		var z := float(dargs[vi + 2])
+		p.teleport(Vector3(x, Terrain.height(x, z) + 0.3, z))
+		p.cam_yaw = deg_to_rad(float(dargs[vi + 3]))
+	var bi := dargs.find("--debug-bloom")
+	if bi >= 0 and bi + 1 < dargs.size():
+		game._apply_restore(float(dargs[bi + 1]))
 
 func _start_host() -> void:
 	if game:
@@ -240,6 +353,8 @@ func _back_to_menu(msg: String) -> void:
 		game.queue_free()
 		game = null
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if not autotest:
+		_build_preview()
 	menu.visible = true
 	status_label.text = msg
 	if autotest:
@@ -247,6 +362,18 @@ func _back_to_menu(msg: String) -> void:
 		get_tree().quit(1)
 
 const SETTINGS_PATH := "user://reglages.cfg"
+
+func _load_setting(key: String, default: Variant) -> Variant:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		return cfg.get_value("affichage", key, default)
+	return default
+
+func _save_setting(key: String, value: Variant) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
+	cfg.set_value("affichage", key, value)
+	cfg.save(SETTINGS_PATH)
 
 func _load_last_ip() -> String:
 	var cfg := ConfigFile.new()

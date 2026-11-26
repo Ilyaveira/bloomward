@@ -4,13 +4,17 @@ extends RefCounted
 
 const OUTLINE_SHADER := preload("res://shaders/outline.gdshader")
 
-## Matériau stylisé : couleur unie, ombrage en aplats doux, contour optionnel.
-static func toon(color: Color, outline_width: float = 0.025, roughness: float = 0.9) -> StandardMaterial3D:
+## Matériau stylisé : couleur unie, ombrage en aplats doux, liseré de lumière.
+## (Les contours sont dessinés en post-traitement ; la coque inversée reste disponible.)
+static func toon(color: Color, outline_width: float = 0.0, roughness: float = 0.9) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = color
 	m.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
 	m.specular_mode = BaseMaterial3D.SPECULAR_TOON
 	m.roughness = roughness
+	m.rim_enabled = true
+	m.rim = 0.22
+	m.rim_tint = 0.7
 	if outline_width > 0.0:
 		var o := ShaderMaterial.new()
 		o.shader = OUTLINE_SHADER
