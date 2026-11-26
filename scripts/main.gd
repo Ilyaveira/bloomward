@@ -117,7 +117,7 @@ func _build_menu() -> void:
 	join_row.add_theme_constant_override("separation", 10)
 	ip_edit = LineEdit.new()
 	ip_edit.placeholder_text = "Adresse de l'hôte (ex. 192.168.1.20)"
-	ip_edit.text = "127.0.0.1"
+	ip_edit.text = _load_last_ip()
 	ip_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ip_edit.custom_minimum_size = Vector2(0, 48)
 	ip_edit.add_theme_font_size_override("font_size", 20)
@@ -133,6 +133,14 @@ func _build_menu() -> void:
 	status_label.add_theme_font_size_override("font_size", 18)
 	status_label.add_theme_color_override("font_color", Color(0.55, 0.30, 0.22))
 	box.add_child(status_label)
+
+	var how := Label.new()
+	how.text = "À deux : l'un clique « Héberger » et son adresse s'affiche en grand à l'écran.\nL'autre tape cette adresse dans le champ ci-dessus, puis clique « Rejoindre »."
+	how.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	how.add_theme_font_size_override("font_size", 16)
+	how.add_theme_color_override("font_color", Color(0.40, 0.34, 0.28))
+	box.add_child(how)
 
 	var quit := _button("Quitter", func(): get_tree().quit())
 	box.add_child(quit)
@@ -185,7 +193,9 @@ func _start_host() -> void:
 		status_label.text = "Impossible d'héberger (port %d déjà utilisé ?). Code : %s" % [PORT, error_string(err)]
 		return
 	multiplayer.multiplayer_peer = peer
-	_create_game("Partie hébergée — adresse à donner : %s" % ", ".join(_local_ips()), false)
+	var ips := _local_ips()
+	_create_game("Partie hébergée — adresse : %s" % ", ".join(ips), false)
+	game.host_banner_text = "En attente de ton partenaire…\nAdresse à lui donner :\n%s" % "\n".join(ips)
 	game.server_begin()
 	print("Serveur prêt sur le port %d. Adresses locales : %s" % [PORT, ", ".join(_local_ips())])
 
@@ -201,6 +211,11 @@ func _start_join(ip: String) -> void:
 		status_label.text = "Connexion impossible : %s" % error_string(err)
 		return
 	status_label.text = "Connexion à %s…" % ip
+	_save_last_ip(ip)
+	# Garde-fou : sans réponse au bout de 12 s, on abandonne avec un message clair.
+	get_tree().create_timer(12.0).timeout.connect(func():
+		if game and not game.visible and multiplayer.multiplayer_peer == peer:
+			_on_connection_failed())
 	# Le décor doit exister AVANT l'arrivée des données du serveur.
 	_create_game("Connecté à %s" % ip, false)
 	menu.visible = true
@@ -231,12 +246,29 @@ func _back_to_menu(msg: String) -> void:
 		push_error("AUTOTEST: " + msg)
 		get_tree().quit(1)
 
+const SETTINGS_PATH := "user://reglages.cfg"
+
+func _load_last_ip() -> String:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		return str(cfg.get_value("reseau", "derniere_adresse", "127.0.0.1"))
+	return "127.0.0.1"
+
+func _save_last_ip(ip: String) -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
+	cfg.set_value("reseau", "derniere_adresse", ip)
+	cfg.save(SETTINGS_PATH)
+
 ## Adresses IPv4 du réseau local (celles qu'un autre PC de la maison peut joindre).
 func _local_ips() -> PackedStringArray:
 	var out := PackedStringArray()
 	for a in IP.get_local_addresses():
 		if a.begins_with("192.168.") or a.begins_with("10.") or (a.begins_with("172.") and a.split(".").size() == 4 and int(a.split(".")[1]) >= 16 and int(a.split(".")[1]) <= 31):
-			out.append(a)
+			out.append(a + "  (même réseau)")
+		elif a.begins_with("100.") and a.split(".").size() == 4 and int(a.split(".")[1]) >= 64 and int(a.split(".")[1]) <= 127:
+			# Plage 100.64.0.0/10 : celle qu'utilise Tailscale pour jouer à distance.
+			out.append(a + "  (Tailscale, à distance)")
 	if out.is_empty():
 		out.append("127.0.0.1 (ce PC uniquement)")
 	return out

@@ -38,6 +38,7 @@ const DRY_LEAVES := Color(0.72, 0.54, 0.36)
 var autotest := false
 var solo := false
 var info_text := ""
+var host_banner_text := ""
 
 # --- État partagé (copie locale, l'hôte fait foi) ---
 var stone_state: Array[int] = [0, 0, 0, 0]
@@ -73,6 +74,7 @@ var hud: CanvasLayer
 var prompt_label: Label
 var info_label: Label
 var message_label: Label
+var banner_label: Label
 var _message_tween: Tween
 var _t := 0.0
 
@@ -646,6 +648,15 @@ func _build_hud() -> void:
 	message_label.modulate.a = 0.0
 	hud.add_child(message_label)
 
+	banner_label = _centered_label(34)
+	banner_label.anchor_top = 0.35
+	banner_label.anchor_bottom = 0.35
+	banner_label.visible = false
+	hud.add_child(banner_label)
+	get_tree().create_timer(1.2).timeout.connect(func():
+		if not solved:
+			_show_message("Explore la clairière.\nQuelque chose ici attend d'être réveillé.", 5.0))
+
 	var help := Label.new()
 	help.text = "ZQSD / flèches : marcher   ·   Souris : regarder   ·   Espace : sauter   ·   E : interagir   ·   Échap : libérer la souris"
 	help.anchor_top = 1.0
@@ -672,6 +683,8 @@ func _centered_label(size: int) -> Label:
 func _update_prompt() -> void:
 	var count := players_root.get_child_count()
 	info_label.text = "%s\nVoyageurs présents : %d" % [info_text, count]
+	banner_label.visible = host_banner_text != "" and count < 2
+	banner_label.text = host_banner_text
 	var p := _local_player()
 	prompt_label.text = ""
 	if p == null or solved:
