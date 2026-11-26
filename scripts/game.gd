@@ -643,14 +643,14 @@ func _build_hud() -> void:
 	hud.add_child(prompt_label)
 
 	message_label = _centered_label(32)
-	message_label.anchor_top = 0.22
-	message_label.anchor_bottom = 0.22
+	message_label.anchor_top = 0.11
+	message_label.anchor_bottom = 0.11
 	message_label.modulate.a = 0.0
 	hud.add_child(message_label)
 
 	banner_label = _centered_label(34)
-	banner_label.anchor_top = 0.35
-	banner_label.anchor_bottom = 0.35
+	banner_label.anchor_top = 0.27
+	banner_label.anchor_bottom = 0.27
 	banner_label.visible = false
 	hud.add_child(banner_label)
 	get_tree().create_timer(1.2).timeout.connect(func():
