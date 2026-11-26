@@ -70,6 +70,21 @@ func _make_noise_tex(seed_value: int, freq: float, size: int = 256) -> NoiseText
 	t.noise = n
 	return t
 
+## Étalonnage : ombres légèrement bleutées, hautes lumières dorées, courbe en S douce.
+func _grade_texture() -> GradientTexture1D:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.18, 0.5, 0.82, 1.0])
+	g.colors = PackedColorArray([
+		Color(0.015, 0.025, 0.055),
+		Color(0.150, 0.165, 0.200),
+		Color(0.505, 0.500, 0.480),
+		Color(0.865, 0.840, 0.790),
+		Color(1.0, 0.975, 0.930)])
+	var t := GradientTexture1D.new()
+	t.gradient = g
+	t.width = 256
+	return t
+
 func _build_environment() -> void:
 	sky_mat = ShaderMaterial.new()
 	sky_mat.shader = preload("res://shaders/sky.gdshader")
@@ -103,6 +118,27 @@ func _build_environment() -> void:
 	env.fog_height_density = 0.0
 	env.adjustment_enabled = true
 	env.adjustment_contrast = 1.1
+	env.adjustment_color_correction = _grade_texture()
+	if not light_mode:
+		# Lumière qui rebondit sur les surfaces (illumination globale SDFGI) :
+		# l'herbe éclaire le bas des colonnes, les creux s'assombrissent.
+		env.sdfgi_enabled = true
+		env.sdfgi_use_occlusion = true
+		env.sdfgi_cascades = 4
+		env.sdfgi_min_cell_size = 0.2
+		env.sdfgi_energy = 0.9
+		env.sdfgi_bounce_feedback = 0.45
+		env.sdfgi_read_sky_light = true
+		# Brume volumétrique : les rayons du soleil se dessinent entre les arbres.
+		env.volumetric_fog_enabled = true
+		env.volumetric_fog_density = 0.011
+		env.volumetric_fog_albedo = Color(1.0, 0.96, 0.9)
+		env.volumetric_fog_anisotropy = 0.7
+		env.volumetric_fog_length = 70.0
+		env.volumetric_fog_detail_spread = 2.0
+		env.volumetric_fog_gi_inject = 0.4
+		env.volumetric_fog_sky_affect = 0.0
+		env.volumetric_fog_ambient_inject = 0.15
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -115,7 +151,13 @@ func _build_environment() -> void:
 	sun.shadow_blur = 1.5
 	sun.directional_shadow_max_distance = 80.0
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if light_mode else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.light_volumetric_fog_energy = 1.6
 	add_child(sun)
+	# Lissage des bords : MSAA 4x en mode normal, 2x en mode léger.
+	var vp := get_viewport()
+	if vp:
+		vp.msaa_3d = Viewport.MSAA_2X if light_mode else Viewport.MSAA_4X
+		vp.use_debanding = true
 
 	# Lumière de rebond douce et froide depuis le côté opposé (relief des ombres).
 	var fill := DirectionalLight3D.new()
@@ -155,6 +197,7 @@ func _water_material() -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = preload("res://shaders/water.gdshader")
 	m.set_shader_parameter("noise_tex", noise_tex)
+	m.set_shader_parameter("ssr_steps", 0 if light_mode else 24)
 	m.render_priority = 20
 	return m
 
@@ -282,21 +325,50 @@ func _arch(p: Vector3, angle: float, mat: Material, broken: bool) -> void:
 		fallen.rotation = Vector3(0.1, 0.5, 0.05)
 		root.add_child(fallen)
 
+## Récupère le maillage (et sa taille) d'un modèle .glb, mis en cache.
+func _model_mesh(path: String) -> Array:
+	if _cache.has(path):
+		return _cache[path]
+	var inst: Node = load(path).instantiate()
+	var found: Array = [null, AABB()]
+	for node in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi: MeshInstance3D = node
+		found = [mi.mesh, mi.transform * mi.get_aabb(), mi.transform]
+		break
+	inst.free()
+	_cache[path] = found
+	return found
+
+## Pose une instance d'un modèle, ramenée à la taille voulue (plus grande dimension).
+func _place_model(path: String, pos: Vector3, size: float, yaw: float, mat: Material) -> MeshInstance3D:
+	var data := _model_mesh(path)
+	var aabb: AABB = data[1]
+	var k := size / maxf(aabb.get_longest_axis_size(), 0.001)
+	var mi := MeshInstance3D.new()
+	mi.mesh = data[0]
+	mi.material_override = mat
+	var basis := Basis(Vector3.UP, yaw) * (data[2] as Transform3D).basis.scaled(Vector3.ONE * k)
+	# On pose la base du modèle au sol.
+	var bottom := (data[2] as Transform3D).basis * aabb.position
+	mi.transform = Transform3D(basis, pos - Vector3(0, minf(bottom.y, aabb.position.y) * k, 0))
+	add_child(mi)
+	return mi
+
 func _build_rocks() -> void:
+	# Rochers : modèles Quaternius (CC0), recolorés dans nos teintes.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = SEED + 30
 	var mats := [Style.toon(Color(0.66, 0.62, 0.57)), Style.toon(Color(0.58, 0.55, 0.52)), Style.toon(Color(0.72, 0.66, 0.58))]
-	for i in 40:
+	for i in 46:
 		var a := rng.randf() * TAU
-		var r := rng.randf_range(9.0, 34.0)
+		var r := rng.randf_range(9.0, 36.0)
 		var p := Vector3(sin(a) * r, 0, cos(a) * r)
-		if Terrain.river_dist(p.x, p.z) < 1.2:
+		if Terrain.river_dist(p.x, p.z) < 1.4 or absf(r - 11.5) < 1.0:
 			continue
-		var s := rng.randf_range(0.3, 1.1) * (1.0 + smoothstep(22.0, 34.0, r) * 1.5)
-		var rock := Style.mesh_instance(Style.sphere(1.0, 6), mats[i % 3], p + Vector3(0, ground_y(p.x, p.z) - s * 0.2, 0))
-		rock.scale = Vector3(s * rng.randf_range(1.0, 1.6), s * rng.randf_range(0.5, 0.9), s)
-		rock.rotation = Vector3(rng.randf_range(-0.2, 0.2), rng.randf() * TAU, rng.randf_range(-0.2, 0.2))
-		add_child(rock)
+		var size := rng.randf_range(0.6, 1.8) * (1.0 + smoothstep(22.0, 36.0, r) * 2.0)
+		p.y = ground_y(p.x, p.z) - size * 0.15
+		_place_model("res://assets/models/quaternius/rocks/Rock%d.glb" % (1 + i % 8), p, size, rng.randf() * TAU, mats[i % 3])
+
 	# Galets dans le lit de la rivière
 	for i in 30:
 		var z := rng.randf_range(-4.0, -30.0)
@@ -304,7 +376,24 @@ func _build_rocks() -> void:
 		var g := Style.mesh_instance(Style.sphere(0.18, 6), mats[i % 3], Vector3(x, ground_y(x, z) + 0.03, z))
 		g.scale = Vector3(1.4, 0.5, 1.0) * rng.randf_range(0.7, 1.5)
 		add_child(g)
+	_build_bushes(rng)
 
+func _build_bushes(rng: RandomNumberGenerator) -> void:
+	# Buissons : modèles Quaternius (CC0) ; ils reverdissent et grossissent avec la vague.
+	var names := ["Bush1", "Bush2", "MediumBush", "SmallBush", "SmallBush2", "SmallBush3"]
+	var greens := [Color(0.34, 0.56, 0.28), Color(0.42, 0.62, 0.30), Color(0.30, 0.50, 0.32)]
+	var mat := _foliage_material()
+	var placed := 0
+	while placed < 34:
+		var a := rng.randf() * TAU
+		var r := rng.randf_range(10.0, 30.0)
+		var p := Vector3(sin(a) * r, 0, cos(a) * r)
+		if Terrain.river_dist(p.x, p.z) < 2.0 or absf(r - 11.5) < 1.2:
+			continue
+		p.y = ground_y(p.x, p.z)
+		var b := _place_model("res://assets/models/quaternius/bushes/%s.glb" % names[placed % names.size()], p, rng.randf_range(1.0, 2.2), rng.randf() * TAU, mat)
+		b.set_instance_shader_parameter("lush_color", greens[placed % greens.size()])
+		placed += 1
 
 # =====================================================================
 #  Arbres
@@ -444,6 +533,7 @@ func _build_grass() -> void:
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	add_child(mmi)
 
 func _flower_mesh() -> ArrayMesh:
@@ -480,6 +570,7 @@ func _build_flowers() -> void:
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	add_child(mmi)
 
 

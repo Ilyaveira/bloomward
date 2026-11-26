@@ -68,6 +68,7 @@ func _setup_inputs() -> void:
 		"move_right": [KEY_D, KEY_RIGHT],
 		"jump": [KEY_SPACE],
 		"interact": [KEY_E],
+		"sprint": [KEY_SHIFT],
 	}
 	for action in actions:
 		if not InputMap.has_action(action):
@@ -229,6 +230,13 @@ func _build_preview() -> void:
 	preview.add_child(w)
 	preview_cam = Camera3D.new()
 	preview_cam.fov = 55.0
+	# Profondeur de champ douce sur le fond du menu (l'arrière-plan se floute).
+	var cam_attr := CameraAttributesPractical.new()
+	cam_attr.dof_blur_far_enabled = true
+	cam_attr.dof_blur_far_distance = 32.0
+	cam_attr.dof_blur_far_transition = 18.0
+	cam_attr.dof_blur_amount = 0.06
+	preview_cam.attributes = cam_attr
 	preview.add_child(preview_cam)
 	add_child(preview)
 	preview_cam.current = true

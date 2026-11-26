@@ -467,7 +467,7 @@ func _build_hud() -> void:
 			_show_message("Explore la clairière.\nQuelque chose ici attend d'être réveillé.", 5.0))
 
 	var help := Label.new()
-	help.text = "ZQSD / flèches : marcher   ·   Souris : regarder   ·   Espace : sauter   ·   E : interagir   ·   Échap : libérer la souris"
+	help.text = "ZQSD / flèches : marcher   ·   Souris : regarder   ·   Maj : courir   ·   Espace : sauter   ·   E : interagir   ·   Échap : libérer la souris"
 	help.anchor_top = 1.0
 	help.anchor_bottom = 1.0
 	help.offset_top = -40

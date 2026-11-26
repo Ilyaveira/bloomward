@@ -4,21 +4,22 @@ Jeu vidéo original de soin et de restauration d'un monde, zone par zone, jouabl
 
 > **Envie de garder la surprise ?** Contente-toi de ce fichier. Les scripts du dossier `scripts/` (surtout `game.gd`) contiennent la logique de l'énigme.
 
-## État actuel : prototype v0.2
+## État actuel : prototype v0.3
 
 - une clairière en relief (place en ruine, source, rivière qui file par une gorge, collines) à faire revivre ;
-- un personnage animé, caméra derrière lui ;
+- des personnages animés (marche, course avec Maj, saut), caméra derrière eux ;
 - une énigme qui se résout **à deux** (chaque joueur voit des choses que l'autre ne voit pas) ;
 - une restauration en vague depuis la source : herbe, fleurs, feuillage, eau, papillons ;
 - rendu 3D stylisé : ombrage en aplats doux, fins contours en post-traitement, ciel et nuages, herbe et arbres animés par le vent ;
+- éclairage avancé : lumière qui rebondit sur les surfaces (SDFGI), brume volumétrique où se dessinent les rayons du soleil, reflets dans l'eau, lissage des bords, étalonnage des couleurs, flou de profondeur sur le menu ;
 - partie solo, ou à deux en réseau (même réseau, ou à distance via Tailscale) ;
-- un « mode léger » dans le menu pour les PC moins puissants.
+- un « mode léger » dans le menu pour les PC moins puissants (il coupe l'éclairage avancé, les reflets et une partie de l'herbe).
 
-Tout le décor est fabriqué par le code (aucun fichier graphique externe) ; pas encore de musique ni de sons.
+Le terrain, l'eau, le ciel, l'herbe, les arbres et les ruines sont fabriqués par le code. Les personnages, rochers et buissons sont des modèles 3D libres de droits (CC0) de Quaternius : voir [assets/models/CREDITS.md](assets/models/CREDITS.md). Pas encore de musique ni de sons.
 
 ## Le plus simple : la version Windows prête à lancer
 
-1. Récupère `Bloomward-Windows-v0.2.zip` (fourni dans le fil du projet), décompresse-le, double-clique sur `Bloomward.exe`. Rien à installer.
+1. Récupère `Bloomward-Windows-v0.3.zip` (fourni dans le fil du projet), décompresse-le, double-clique sur `Bloomward.exe`. Rien à installer.
 2. Le fichier n'est pas signé numériquement : Windows peut afficher « Windows a protégé votre ordinateur ». Clique sur **Informations complémentaires**, puis **Exécuter quand même**.
 3. La première fois que tu héberges, Windows peut demander d'autoriser Bloomward sur le réseau : accepte pour les **réseaux privés**.
 
@@ -37,6 +38,7 @@ Le menu et l'écran de jeu indiquent ensuite quoi faire (héberger, rejoindre, c
 | Action | Touche |
 |---|---|
 | Marcher | ZQSD (clavier AZERTY) ou flèches |
+| Courir | Maj (en marchant) |
 | Regarder autour | souris |
 | Sauter | Espace |
 | Interagir | E |
