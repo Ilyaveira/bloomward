@@ -31,7 +31,7 @@ func _ready() -> void:
 	if not "--autotest" in OS.get_cmdline_user_args() and DisplayServer.get_name() != "headless":
 		_build_preview()
 	_build_menu()
-	if not "--autotest" in OS.get_cmdline_user_args():
+	if not "--autotest" in OS.get_cmdline_user_args() and not "--lab" in OS.get_cmdline_user_args():
 		Son.start()
 	multiplayer.connected_to_server.connect(_on_connected)
 	multiplayer.connection_failed.connect(_on_connection_failed)
@@ -51,6 +51,19 @@ func _ready() -> void:
 			get_viewport().get_texture().get_image().save_png(path)
 			print("Capture enregistrée : ", path)
 			get_tree().quit(0))
+	var li := args.find("--lab")
+	if li >= 0 and li + 1 < args.size():
+		# Laboratoire de styles (images de directions artistiques, hors jeu).
+		_free_preview()
+		menu.visible = false
+		var lab := Node3D.new()
+		lab.set_script(load("res://lab/lab.gd"))
+		lab.style = int(args[li + 1])
+		var lv := args.find("--lab-view")
+		if lv >= 0 and lv + 1 < args.size():
+			lab.view = int(args[lv + 1])
+		add_child(lab)
+		return
 	if "--solo" in args:
 		_start_solo()
 	elif "--host" in args:
