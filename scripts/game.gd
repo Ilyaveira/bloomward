@@ -189,6 +189,7 @@ func local_interact(player: Node3D) -> void:
 		return
 	if not my_turnable.has(idx):
 		_show_message("Cette pierre reste sourde à ta main.")
+		Son.play("refus", -4.0)
 		return
 	if multiplayer.is_server():
 		_server_turn(idx, multiplayer.get_unique_id())
@@ -219,6 +220,7 @@ func _set_stone(idx: int, symbol: int) -> void:
 	stone_state[idx] = symbol
 	_refresh_stones()
 	var holder: Node3D = stones[idx]["emblem_holder"]
+	Son.play_at("pierre", holder.global_position, 2.0, randf_range(0.92, 1.08))
 	var tw := create_tween()
 	holder.scale = Vector3.ONE * 0.6
 	tw.tween_property(holder, "scale", Vector3.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -237,6 +239,7 @@ func _check_aligned() -> void:
 func _set_aligned(value: bool) -> void:
 	aligned = value
 	if value and not solved:
+		Son.play("accord", -3.0)
 		_show_message("Les pierres vibrent à l'unisson…")
 
 func _physics_process(delta: float) -> void:
@@ -264,6 +267,8 @@ func _physics_process(delta: float) -> void:
 @rpc("authority", "call_local", "reliable")
 func _set_pads(occupied: Array) -> void:
 	for j in 2:
+		if occupied[j] and not pads[j].get_meta("occupied", false):
+			Son.play_at("dalle", pads[j].global_position, 0.0)
 		pads[j].set_meta("occupied", occupied[j])
 
 @rpc("authority", "call_local", "reliable")
@@ -271,6 +276,7 @@ func _on_solved() -> void:
 	if solved:
 		return
 	solved = true
+	Son.play("eclosion", -1.0)
 	_show_message("La source s'éveille.", 6.0)
 	var tw := create_tween()
 	tw.tween_method(_apply_restore, 0.0, 1.0, 9.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
@@ -412,6 +418,7 @@ func _refresh_hints() -> void:
 func _apply_restore(t: float) -> void:
 	restore_t = t
 	world.apply_restore(t)
+	Son.set_bloom(t)
 
 
 # =====================================================================

@@ -12,6 +12,7 @@ static var _cache := {}
 static var light_mode := false
 
 var env: Environment
+var water_sound: AudioStreamPlayer3D
 var sky_mat: ShaderMaterial
 var noise_tex: NoiseTexture2D
 var pollen: GPUParticles3D
@@ -47,6 +48,8 @@ func apply_restore(t: float) -> void:
 	pollen.emitting = t > 0.35
 	butterflies.emitting = t > 0.55
 	spring_bubbles.emitting = t > 0.02
+	if water_sound:
+		water_sound.volume_db = linear_to_db(maxf(smoothstep(0.0, 0.25, t), 0.001)) - 4.0
 
 
 static func ground_y(x: float, z: float) -> float:
@@ -202,6 +205,19 @@ func _water_material() -> ShaderMaterial:
 	return m
 
 func _build_spring() -> void:
+	# Clapotis de la source : on l'entend en s'approchant, une fois l'eau revenue.
+	if DisplayServer.get_name() != "headless":
+		water_sound = AudioStreamPlayer3D.new()
+		var ws: AudioStreamOggVorbis = load("res://assets/audio/eau.ogg")
+		ws.loop = true
+		water_sound.stream = ws
+		water_sound.bus = "Effets"
+		water_sound.unit_size = 5.0
+		water_sound.max_distance = 30.0
+		water_sound.volume_db = -60.0
+		water_sound.position = Vector3(0, Terrain.height(0, 0) + 0.5, 0)
+		water_sound.autoplay = true
+		add_child(water_sound)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = SEED + 10
 	var rim_mat := Style.toon(Color(0.76, 0.72, 0.64))

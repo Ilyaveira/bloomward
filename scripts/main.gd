@@ -31,6 +31,8 @@ func _ready() -> void:
 	if not "--autotest" in OS.get_cmdline_user_args() and DisplayServer.get_name() != "headless":
 		_build_preview()
 	_build_menu()
+	if not "--autotest" in OS.get_cmdline_user_args():
+		Son.start()
 	multiplayer.connected_to_server.connect(_on_connected)
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
@@ -182,6 +184,9 @@ func _build_menu() -> void:
 		_save_setting("mode_leger", on))
 	box.add_child(light)
 
+	box.add_child(_volume_row("Musique", "Musique"))
+	box.add_child(_volume_row("Bruitages", "Effets"))
+
 	var quit := _button("Quitter", func(): get_tree().quit())
 	box.add_child(quit)
 
@@ -259,8 +264,32 @@ func _button(text: String, cb: Callable) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(0, 52)
 	b.add_theme_font_size_override("font_size", 22)
+	b.pressed.connect(func(): Son.play("clic", -8.0))
 	b.pressed.connect(cb)
 	return b
+
+## Curseur de volume (0 à 1) pour un groupe de sons : « Musique » ou « Effets ».
+func _volume_row(text: String, bus_name: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var l := Label.new()
+	l.text = text
+	l.custom_minimum_size = Vector2(110, 0)
+	l.add_theme_font_size_override("font_size", 17)
+	l.add_theme_color_override("font_color", Color(0.30, 0.26, 0.22))
+	row.add_child(l)
+	var s := HSlider.new()
+	s.min_value = 0.0
+	s.max_value = 1.0
+	s.step = 0.05
+	s.value = Son.get_volume(bus_name)
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	s.value_changed.connect(func(v: float): Son.set_volume(bus_name, v))
+	if bus_name == "Effets":
+		s.drag_ended.connect(func(_changed: bool): Son.play("clic", -8.0))
+	row.add_child(s)
+	return row
 
 func _spacer(h: int) -> Control:
 	var c := Control.new()
@@ -361,6 +390,7 @@ func _back_to_menu(msg: String) -> void:
 		game.queue_free()
 		game = null
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Son.set_bloom(0.0)
 	if not autotest:
 		_build_preview()
 	menu.visible = true

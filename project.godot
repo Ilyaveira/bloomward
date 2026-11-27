@@ -10,6 +10,10 @@ config/description="Prototype jouable de Bloomward : une petite zone à restaure
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.5", "Forward Plus")
 
+[autoload]
+
+Son="*res://scripts/son.gd"
+
 [display]
 
 window/size/viewport_width=1600

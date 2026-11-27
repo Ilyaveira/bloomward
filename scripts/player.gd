@@ -83,6 +83,7 @@ var _anim: AnimationPlayer
 var _anim_names := {}
 var _current_anim := ""
 var _airborne_time := 0.0
+var _step_dist := 0.0
 
 func _build_model(cloak_color: Color) -> void:
 	_body = Node3D.new()
@@ -206,6 +207,13 @@ func _animate(delta: float) -> void:
 		_play("Walk")
 	else:
 		_play("Idle", 0.3)
+	# Bruits de pas : un pas tous les ~1,5 m en marchant, plus espacés en courant.
+	if _airborne_time == 0.0 and moved > 0.3 and moved < 15.0:
+		_step_dist += moved * delta
+		var stride := 2.3 if moved > 4.5 else 1.5
+		if _step_dist >= stride:
+			_step_dist = 0.0
+			Son.play_at("pas_%d" % randi_range(1, 5), global_position, -9.0 if moved > 4.5 else -13.0, randf_range(0.9, 1.1))
 	if _anim and _current_anim == "Walk":
 		_anim.speed_scale = clampf(moved / 2.2, 0.8, 1.6)
 	elif _anim:
