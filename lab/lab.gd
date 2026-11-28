@@ -1101,116 +1101,40 @@ func _build_flowers() -> void:
 
 # ---------------------------------------------------------------- personnage, caméra, finition
 
-## Vêtement en surface de révolution : profil [rayon, hauteur]. Les épaules sont élargies,
-## le bas ondule (plis), et `gap` ouvre le devant en s'évasant vers le bas.
-func _lathe(profile: Array, segments: int, wave: float, gap := 0.0, flip := false) -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_smooth_group(0)
-	var rows := profile.size()
-	var cols := segments + 1
-	for j in rows:
-		var py: float = profile[j][1]
-		var low: float = clampf((1.47 - py) / 0.97, 0.0, 1.0)
-		var sh: float = smoothstep(0.95, 1.50, py)
-		var g: float = gap * pow(low, 0.6)
-		for i in cols:
-			var a := PI + g + (TAU - 2.0 * g) * i / segments
-			var r: float = profile[j][0] * (1.0 + wave * low * low * sin(a * 5.0 + 0.6))
-			# le vêtement tombe un peu plus bas dans le dos
-			var y: float = py - low * low * 0.05 * (0.5 + 0.5 * cos(a))
-			st.add_vertex(Vector3(sin(a) * r * (1.0 + 0.34 * sh), y, -cos(a) * r * (1.0 - 0.14 * sh)))
-	for j in rows - 1:
-		for i in segments:
-			var a0 := j * cols + i
-			var a1 := a0 + 1
-			var b0 := a0 + cols
-			var b1 := a1 + cols
-			if flip:
-				st.add_index(a0); st.add_index(a1); st.add_index(b0)
-				st.add_index(a1); st.add_index(b1); st.add_index(b0)
-			else:
-				st.add_index(a0); st.add_index(b0); st.add_index(a1)
-				st.add_index(a1); st.add_index(b0); st.add_index(b1)
-	st.generate_normals()
-	return st.commit()
+var walk := 0.0
+var _perso: Node3D
 
-func _capsule(r: float, h: float) -> CapsuleMesh:
-	var c := CapsuleMesh.new()
-	c.radius = r
-	c.height = h
-	c.radial_segments = 16
-	c.rings = 6
-	return c
-
-## Personnage d'essai original : silhouette adulte à cape ouverte, lisible de loin, visage réduit à deux yeux.
 func _build_caped(pos: Vector3, yaw: float) -> void:
-	var root := Node3D.new()
-	root.position = pos
-	root.rotation.y = yaw
-	add_child(root)
-	var cloth: Color = pal["shirt"]
-	var skin := Color(0.93, 0.76, 0.62)
-	var dark := Color(0.20, 0.22, 0.30)
-	var linen := Color(0.90, 0.86, 0.76)
-	var leather := Color(0.42, 0.28, 0.20)
-	var hair := Color(0.28, 0.19, 0.15)
-	var parts := [
-		# jambes et bottes
-		[_capsule(0.062, 0.86), solid(dark), Vector3(-0.085, 0.45, 0), Vector3.ONE],
-		[_capsule(0.062, 0.86), solid(dark), Vector3(0.085, 0.45, 0), Vector3.ONE],
-		[_capsule(0.074, 0.36), solid(leather), Vector3(-0.085, 0.19, 0), Vector3.ONE],
-		[_capsule(0.074, 0.36), solid(leather), Vector3(0.085, 0.19, 0), Vector3.ONE],
-		[_sphere(0.09, 16), solid(leather), Vector3(-0.085, 0.06, 0.04), Vector3(0.9, 0.7, 1.5)],
-		[_sphere(0.09, 16), solid(leather), Vector3(0.085, 0.06, 0.04), Vector3(0.9, 0.7, 1.5)],
-		# bras le long du corps, mains
-		[_capsule(0.042, 0.60), solid(linen.darkened(0.06)), Vector3(-0.205, 1.14, 0.0), Vector3.ONE],
-		[_capsule(0.042, 0.60), solid(linen.darkened(0.06)), Vector3(0.205, 1.14, 0.0), Vector3.ONE],
-		[_sphere(0.045, 12), solid(skin), Vector3(-0.205, 0.82, 0.01), Vector3(0.85, 1.2, 1.0)],
-		[_sphere(0.045, 12), solid(skin), Vector3(0.205, 0.82, 0.01), Vector3(0.85, 1.2, 1.0)],
-		# ceinture
-		[_sphere(0.158, 20), solid(leather.darkened(0.15)), Vector3(0, 1.01, 0), Vector3(1.0, 0.20, 0.95)],
-		# cou, tête, cheveux
-		[_capsule(0.046, 0.16), solid(skin.darkened(0.06)), Vector3(0, 1.525, 0.0), Vector3.ONE],
-		[_sphere(0.115, 24), solid(skin), Vector3(0, 1.675, 0.008), Vector3(0.92, 1.16, 0.98)],
-		[_sphere(0.125, 24), solid(hair), Vector3(0, 1.715, -0.022), Vector3(0.97, 1.02, 1.02)],
-		[_sphere(0.075, 16), solid(hair), Vector3(0, 1.66, -0.125), Vector3(1.0, 1.0, 0.9)],
-		# deux yeux, seuls traits du visage
-		[_sphere(0.011, 10), solid(Color(0.16, 0.14, 0.18)), Vector3(-0.040, 1.668, 0.112), Vector3(1.0, 1.3, 0.5)],
-		[_sphere(0.011, 10), solid(Color(0.16, 0.14, 0.18)), Vector3(0.040, 1.668, 0.112), Vector3(1.0, 1.3, 0.5)],
-		# capuche rabattue dans le dos
-		[_sphere(0.13, 16), solid(cloth.darkened(0.10)), Vector3(0, 1.43, -0.125), Vector3(1.05, 0.62, 0.70)],
-	]
-	for p in parts:
-		var mi := MeshInstance3D.new()
-		mi.mesh = p[0]
-		mi.material_override = p[1]
-		mi.position = p[2]
-		mi.scale = p[3]
-		(p[1] as ShaderMaterial).set_shader_parameter("brush", 0.0)
-		root.add_child(mi)
-	var cape_profile := [[0.066, 1.53], [0.11, 1.508], [0.15, 1.472], [0.18, 1.42], [0.20, 1.35], [0.212, 1.22], [0.22, 1.08], [0.238, 0.90], [0.262, 0.74], [0.29, 0.58], [0.305, 0.52]]
-	var garments := [
-		# tunique claire
-		[_lathe([[0.05, 1.50], [0.125, 1.45], [0.15, 1.30], [0.135, 1.04], [0.15, 0.94], [0.17, 0.76]], 28, 0.03), solid(linen.darkened(0.14), linen, 0.76, 1.45), 1.0],
-		# cape ouverte devant : extérieur, doublure, liseré
-		[_lathe(cape_profile, 44, 0.07, 0.50), solid(cloth.darkened(0.22), cloth, 0.50, 1.45), 1.0],
-		[_lathe(cape_profile, 44, 0.07, 0.50, true), solid(cloth.darkened(0.42)), 0.992],
-		[_lathe([[0.288, 0.59], [0.306, 0.515]], 44, 0.07, 0.50), solid(cloth.lightened(0.5)), 1.012],
-		# col clair
-		[_lathe([[0.062, 1.545], [0.105, 1.50], [0.15, 1.47]], 28, 0.0), solid(cloth.lightened(0.38)), 1.02],
-	]
-	for g in garments:
-		var mi := MeshInstance3D.new()
-		mi.mesh = g[0]
-		mi.material_override = g[1]
-		mi.scale = Vector3(g[2], 1.0, g[2])
-		(g[1] as ShaderMaterial).set_shader_parameter("brush", 0.0)
-		root.add_child(mi)
+	_perso = Node3D.new()
+	_perso.set_script(load("res://lab/perso_cape.gd"))
+	_perso.position = pos
+	_perso.rotation.y = yaw
+	add_child(_perso)
+	_perso.setup(solid, pal["shirt"])
+	set_process(walk > 0.0)
+
+func _process(delta: float) -> void:
+	if _perso != null and walk > 0.0:
+		_perso.animate(delta, walk)
+		if view == 4:
+			# travelling : le personnage traverse la prairie, la caméra l'accompagne
+			_perso.position.x -= walk * delta
+			_perso.position.y = gy(_perso.position.x, _perso.position.z)
+			_place_travelling()
+
+var _cam: Camera3D
+
+func _place_travelling() -> void:
+	var p := _perso.position
+	_cam.position = _cam.position.lerp(p + Vector3(3.0, 1.55, 4.4), 0.12) if _cam.position != Vector3.ZERO else p + Vector3(3.0, 1.55, 4.4)
+	_cam.look_at(p + Vector3(-0.9, 1.0, -0.4))
 
 func _build_character() -> void:
 	if style == 3:
-		_build_caped(Vector3(2.6, gy(2.6, 6.4), 6.4), PI + 0.35)
+		if view == 4:
+			_build_caped(Vector3(8.0, gy(8.0, 7.5), 7.5), -PI / 2.0)
+		else:
+			_build_caped(Vector3(2.6, gy(2.6, 6.4), 6.4), PI + 0.35)
 		return
 	var scene: PackedScene = load("res://assets/models/quaternius/characters/Female_Casual.glb")
 	var ch := scene.instantiate()
@@ -1262,7 +1186,11 @@ func _build_post() -> void:
 func _build_camera() -> void:
 	var cam := Camera3D.new()
 	add_child(cam)
-	if view == 0:
+	_cam = cam
+	if view == 4 and _perso != null:
+		cam.fov = 46.0
+		_place_travelling()
+	elif view == 0:
 		cam.fov = 58.0
 		cam.position = Vector3(4.6, gy(4.6, 11.6) + 2.3, 11.6)
 		cam.look_at(Vector3(-0.8, 1.3, -3.0))
