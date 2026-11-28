@@ -457,15 +457,15 @@ func _trunk_top(h: float, bend: Vector2) -> Vector3:
 	return Vector3(bend.x * sin(PI * 0.9), h, bend.y)
 
 ## Feuillage peint : des touffes de feuilles posées sur des « boules », normales arrondies.
-func _canopy_painted(blobs: Array, center: Vector3) -> ArrayMesh:
+func _canopy_painted(blobs: Array, center: Vector3, density: float = 70.0, spread: float = 0.72) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for blob in blobs:
 		var bc: Vector3 = blob[0]
 		var br: float = blob[1]
-		for k in int(70 * br):
+		for k in int(density * br):
 			var dir := Vector3(rng.randfn(), rng.randfn() * 0.8 + 0.25, rng.randfn()).normalized()
-			var p := bc + dir * br * rng.randf_range(0.72, 1.02)
+			var p := bc + dir * br * rng.randf_range(spread, 1.02)
 			var nrm := (p - center + Vector3(0, 0.6, 0)).normalized().lerp(dir, 0.35).normalized()
 			var size := br * rng.randf_range(0.55, 0.85)
 			# quadrilatère tourné vers l'extérieur, avec un peu de désordre
@@ -545,15 +545,50 @@ func _tree(pos: Vector3, scale_f: float, kind: int) -> void:
 		var off := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.9, 1.5) if i > 0 else Vector3.ZERO
 		blobs.append([top + off + Vector3(0, 0.5 + rng.randf_range(-0.2, 0.5) + (0.9 if i == 0 else 0.0), 0), rng.randf_range(1.0, 1.45)])
 	if style == 3:
-		# feuillage en masses rondes, dégradé du sombre (dessous) au clair (dessus)
-		for blob in blobs:
+		# Houppier en paliers : de grosses masses bosselées en couronne, de plus petites
+		# au-dessus, et une frange de feuilles qui découpe la silhouette.
+		var crown := rng.randf_range(2.1, 2.7)
+		var masses := []
+		var ring := 5
+		for i in ring:
+			var a2 := TAU * i / ring + rng.randf_range(-0.35, 0.35)
+			masses.append([top + Vector3(cos(a2), 0, sin(a2)) * crown * rng.randf_range(0.48, 0.62) + Vector3(0, rng.randf_range(0.1, 0.6), 0), crown * rng.randf_range(0.50, 0.62)])
+		for i in 3:
+			var a3 := TAU * i / 3.0 + rng.randf_range(-0.5, 0.5)
+			masses.append([top + Vector3(cos(a3), 0, sin(a3)) * crown * 0.26 + Vector3(0, crown * rng.randf_range(0.42, 0.55), 0), crown * rng.randf_range(0.42, 0.50)])
+		masses.append([top + Vector3(rng.randf_range(-0.2, 0.2), crown * 0.86, rng.randf_range(-0.2, 0.2)), crown * 0.34])
+		var mass_mat := solid(dark, light, -0.35, 0.50)
+		for ms in masses:
 			var s3 := MeshInstance3D.new()
-			var br: float = blob[1]
-			s3.mesh = _sphere(br, 24)
-			s3.material_override = solid(dark, light, -br * 0.7, br * 0.9)
-			s3.position = blob[0]
-			s3.scale = Vector3(1.0, 0.82, 1.0)
+			s3.mesh = _blob_mesh(rng.randi() % 4)
+			s3.material_override = mass_mat
+			s3.position = ms[0]
+			s3.rotation.y = rng.randf() * TAU
+			s3.scale = Vector3.ONE * float(ms[1])
 			root.add_child(s3)
+		# branches maîtresses, visibles sous le feuillage
+		for i in 3:
+			var target: Vector3 = masses[i * 2 % ring][0] - Vector3(0, 0.25, 0)
+			var from := top * 0.72
+			var br3 := MeshInstance3D.new()
+			var blen := from.distance_to(target)
+			br3.mesh = _cyl(0.05, 0.11, blen, 8)
+			br3.material_override = trunk_mat
+			br3.position = (from + target) * 0.5
+			br3.basis = _basis_along(target - from)
+			root.add_child(br3)
+		var fringe := MeshInstance3D.new()
+		var fr_blobs := []
+		for ms in masses:
+			fr_blobs.append([ms[0] - Vector3(0, float(ms[1]) * 0.12, 0), float(ms[1]) * 0.98])
+		fringe.mesh = _canopy_painted(fr_blobs, top + Vector3(0, crown * 0.3, 0), 22.0, 0.92)
+		var fm := ShaderMaterial.new()
+		fm.shader = preload("res://lab/leaves.gdshader")
+		fm.set_shader_parameter("leaf_tex", preload("res://lab/leaf_clump.png"))
+		fm.set_shader_parameter("col_dark", dark)
+		fm.set_shader_parameter("col_light", light)
+		fringe.material_override = fm
+		root.add_child(fringe)
 	elif style == 0:
 		var inner_mat := solid(dark.darkened(0.25))
 		for blob in blobs:
@@ -581,6 +616,69 @@ func _tree(pos: Vector3, scale_f: float, kind: int) -> void:
 			s.position = blob[0]
 			root.add_child(s)
 
+var _blob_cache := {}
+## Masse de feuillage : boule aplatie et bosselée (4 variantes mises en cache).
+func _blob_mesh(variant: int) -> ArrayMesh:
+	if _blob_cache.has(variant):
+		return _blob_cache[variant]
+	var s := SphereMesh.new()
+	s.radius = 1.0
+	s.height = 2.0
+	s.radial_segments = 24
+	s.rings = 12
+	var arr := s.get_mesh_arrays()
+	var n := FastNoiseLite.new()
+	n.seed = 900 + variant
+	n.frequency = 0.9
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	for i in verts.size():
+		var v := verts[i].normalized()
+		var d := 1.0 + n.get_noise_3dv(v * 1.5) * 0.30 + n.get_noise_3dv(v * 3.6) * 0.12
+		# dessous plus plat que le dessus
+		verts[i] = v * d * Vector3(1.0, 0.66 if v.y > 0.0 else 0.42, 1.0)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	st.set_smooth_group(0)
+	for i in verts.size():
+		st.add_vertex(verts[i])
+	for i in idx:
+		st.add_index(i)
+	st.generate_normals()
+	_blob_cache[variant] = st.commit()
+	return _blob_cache[variant]
+
+var _tier_cache := {}
+## Étage de sapin : cône dont le bord dessine des pointes de branches qui retombent.
+func _pine_tier_mesh(points: int) -> ArrayMesh:
+	if _tier_cache.has(points):
+		return _tier_cache[points]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(0)
+	st.add_vertex(Vector3(0, 1, 0))
+	var n := points * 2
+	for i in n:
+		var a := TAU * i / n
+		var tip := i % 2 == 0
+		var r := 1.0 if tip else 0.62
+		st.add_vertex(Vector3(cos(a) * r, 0.0 if tip else 0.20, sin(a) * r))
+	st.add_vertex(Vector3(0, 0.30, 0))
+	for i in n:
+		var a1 := 1 + i
+		var b1 := 1 + (i + 1) % n
+		st.add_index(0); st.add_index(b1); st.add_index(a1)
+		st.add_index(n + 1); st.add_index(a1); st.add_index(b1)
+	st.generate_normals()
+	_tier_cache[points] = st.commit()
+	return _tier_cache[points]
+
+## Base dont l'axe Y suit une direction (pour poser une branche).
+func _basis_along(dir: Vector3) -> Basis:
+	var y := dir.normalized()
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+	return Basis(x, y, x.cross(y))
+
 ## Sapin en étages : silhouette découpée, lisible de loin.
 func _pine(root: Node3D, trunk_mat: Material) -> void:
 	var total := rng.randf_range(6.5, 9.5)
@@ -589,17 +687,18 @@ func _pine(root: Node3D, trunk_mat: Material) -> void:
 	tm.material_override = trunk_mat
 	tm.position.y = total * 0.25
 	root.add_child(tm)
-	var tiers := 6
-	var mat := solid(pal["pine_dark"], pal["pine_light"], -0.6, 0.9)
+	var tiers := 8
+	var mat := solid(pal["pine_dark"], pal["pine_light"], 0.05, 0.95)
 	for i in tiers:
 		var t := float(i) / (tiers - 1)
-		var r := lerpf(1.9, 0.45, t) * rng.randf_range(0.9, 1.1)
-		var hh := lerpf(2.0, 1.3, t)
+		var r := lerpf(2.1, 0.40, pow(t, 0.85)) * rng.randf_range(0.88, 1.12)
+		var hh := lerpf(2.2, 1.2, t)
 		var cone := MeshInstance3D.new()
-		cone.mesh = _cyl(0.0, r, hh, 9)
+		cone.mesh = _pine_tier_mesh(7 + (i % 2))
 		cone.material_override = mat
-		cone.position = Vector3(rng.randf_range(-0.06, 0.06), lerpf(total * 0.28, total - hh * 0.5, t), rng.randf_range(-0.06, 0.06))
-		cone.rotation = Vector3(rng.randf_range(-0.05, 0.05), rng.randf() * TAU, rng.randf_range(-0.05, 0.05))
+		cone.position = Vector3(rng.randf_range(-0.08, 0.08), lerpf(total * 0.20, total - hh, t), rng.randf_range(-0.08, 0.08))
+		cone.rotation = Vector3(rng.randf_range(-0.06, 0.06), rng.randf() * TAU, rng.randf_range(-0.06, 0.06))
+		cone.scale = Vector3(r, hh, r)
 		root.add_child(cone)
 
 func _build_trees() -> void:
@@ -750,7 +849,117 @@ func _build_flowers() -> void:
 
 # ---------------------------------------------------------------- personnage, caméra, finition
 
+## Vêtement en surface de révolution : profil [rayon, hauteur]. Les épaules sont élargies,
+## le bas ondule (plis), et `gap` ouvre le devant en s'évasant vers le bas.
+func _lathe(profile: Array, segments: int, wave: float, gap := 0.0, flip := false) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(0)
+	var rows := profile.size()
+	var cols := segments + 1
+	for j in rows:
+		var py: float = profile[j][1]
+		var low: float = clampf((1.47 - py) / 0.97, 0.0, 1.0)
+		var sh: float = smoothstep(0.95, 1.50, py)
+		var g: float = gap * pow(low, 0.6)
+		for i in cols:
+			var a := PI + g + (TAU - 2.0 * g) * i / segments
+			var r: float = profile[j][0] * (1.0 + wave * low * low * sin(a * 5.0 + 0.6))
+			# le vêtement tombe un peu plus bas dans le dos
+			var y: float = py - low * low * 0.05 * (0.5 + 0.5 * cos(a))
+			st.add_vertex(Vector3(sin(a) * r * (1.0 + 0.34 * sh), y, -cos(a) * r * (1.0 - 0.14 * sh)))
+	for j in rows - 1:
+		for i in segments:
+			var a0 := j * cols + i
+			var a1 := a0 + 1
+			var b0 := a0 + cols
+			var b1 := a1 + cols
+			if flip:
+				st.add_index(a0); st.add_index(a1); st.add_index(b0)
+				st.add_index(a1); st.add_index(b1); st.add_index(b0)
+			else:
+				st.add_index(a0); st.add_index(b0); st.add_index(a1)
+				st.add_index(a1); st.add_index(b0); st.add_index(b1)
+	st.generate_normals()
+	return st.commit()
+
+func _capsule(r: float, h: float) -> CapsuleMesh:
+	var c := CapsuleMesh.new()
+	c.radius = r
+	c.height = h
+	c.radial_segments = 16
+	c.rings = 6
+	return c
+
+## Personnage d'essai original : silhouette adulte à cape ouverte, lisible de loin, visage réduit à deux yeux.
+func _build_caped(pos: Vector3, yaw: float) -> void:
+	var root := Node3D.new()
+	root.position = pos
+	root.rotation.y = yaw
+	add_child(root)
+	var cloth: Color = pal["shirt"]
+	var skin := Color(0.93, 0.76, 0.62)
+	var dark := Color(0.20, 0.22, 0.30)
+	var linen := Color(0.90, 0.86, 0.76)
+	var leather := Color(0.42, 0.28, 0.20)
+	var hair := Color(0.28, 0.19, 0.15)
+	var parts := [
+		# jambes et bottes
+		[_capsule(0.062, 0.86), solid(dark), Vector3(-0.085, 0.45, 0), Vector3.ONE],
+		[_capsule(0.062, 0.86), solid(dark), Vector3(0.085, 0.45, 0), Vector3.ONE],
+		[_capsule(0.074, 0.36), solid(leather), Vector3(-0.085, 0.19, 0), Vector3.ONE],
+		[_capsule(0.074, 0.36), solid(leather), Vector3(0.085, 0.19, 0), Vector3.ONE],
+		[_sphere(0.09, 16), solid(leather), Vector3(-0.085, 0.06, 0.04), Vector3(0.9, 0.7, 1.5)],
+		[_sphere(0.09, 16), solid(leather), Vector3(0.085, 0.06, 0.04), Vector3(0.9, 0.7, 1.5)],
+		# bras le long du corps, mains
+		[_capsule(0.042, 0.60), solid(linen.darkened(0.06)), Vector3(-0.205, 1.14, 0.0), Vector3.ONE],
+		[_capsule(0.042, 0.60), solid(linen.darkened(0.06)), Vector3(0.205, 1.14, 0.0), Vector3.ONE],
+		[_sphere(0.045, 12), solid(skin), Vector3(-0.205, 0.82, 0.01), Vector3(0.85, 1.2, 1.0)],
+		[_sphere(0.045, 12), solid(skin), Vector3(0.205, 0.82, 0.01), Vector3(0.85, 1.2, 1.0)],
+		# ceinture
+		[_sphere(0.158, 20), solid(leather.darkened(0.15)), Vector3(0, 1.01, 0), Vector3(1.0, 0.20, 0.95)],
+		# cou, tête, cheveux
+		[_capsule(0.046, 0.16), solid(skin.darkened(0.06)), Vector3(0, 1.525, 0.0), Vector3.ONE],
+		[_sphere(0.115, 24), solid(skin), Vector3(0, 1.675, 0.008), Vector3(0.92, 1.16, 0.98)],
+		[_sphere(0.125, 24), solid(hair), Vector3(0, 1.715, -0.022), Vector3(0.97, 1.02, 1.02)],
+		[_sphere(0.075, 16), solid(hair), Vector3(0, 1.66, -0.125), Vector3(1.0, 1.0, 0.9)],
+		# deux yeux, seuls traits du visage
+		[_sphere(0.011, 10), solid(Color(0.16, 0.14, 0.18)), Vector3(-0.040, 1.668, 0.112), Vector3(1.0, 1.3, 0.5)],
+		[_sphere(0.011, 10), solid(Color(0.16, 0.14, 0.18)), Vector3(0.040, 1.668, 0.112), Vector3(1.0, 1.3, 0.5)],
+		# capuche rabattue dans le dos
+		[_sphere(0.13, 16), solid(cloth.darkened(0.10)), Vector3(0, 1.43, -0.125), Vector3(1.05, 0.62, 0.70)],
+	]
+	for p in parts:
+		var mi := MeshInstance3D.new()
+		mi.mesh = p[0]
+		mi.material_override = p[1]
+		mi.position = p[2]
+		mi.scale = p[3]
+		(p[1] as ShaderMaterial).set_shader_parameter("brush", 0.0)
+		root.add_child(mi)
+	var cape_profile := [[0.066, 1.53], [0.11, 1.508], [0.15, 1.472], [0.18, 1.42], [0.20, 1.35], [0.212, 1.22], [0.22, 1.08], [0.238, 0.90], [0.262, 0.74], [0.29, 0.58], [0.305, 0.52]]
+	var garments := [
+		# tunique claire
+		[_lathe([[0.05, 1.50], [0.125, 1.45], [0.15, 1.30], [0.135, 1.04], [0.15, 0.94], [0.17, 0.76]], 28, 0.03), solid(linen.darkened(0.14), linen, 0.76, 1.45), 1.0],
+		# cape ouverte devant : extérieur, doublure, liseré
+		[_lathe(cape_profile, 44, 0.07, 0.50), solid(cloth.darkened(0.22), cloth, 0.50, 1.45), 1.0],
+		[_lathe(cape_profile, 44, 0.07, 0.50, true), solid(cloth.darkened(0.42)), 0.992],
+		[_lathe([[0.288, 0.59], [0.306, 0.515]], 44, 0.07, 0.50), solid(cloth.lightened(0.5)), 1.012],
+		# col clair
+		[_lathe([[0.062, 1.545], [0.105, 1.50], [0.15, 1.47]], 28, 0.0), solid(cloth.lightened(0.38)), 1.02],
+	]
+	for g in garments:
+		var mi := MeshInstance3D.new()
+		mi.mesh = g[0]
+		mi.material_override = g[1]
+		mi.scale = Vector3(g[2], 1.0, g[2])
+		(g[1] as ShaderMaterial).set_shader_parameter("brush", 0.0)
+		root.add_child(mi)
+
 func _build_character() -> void:
+	if style == 3:
+		_build_caped(Vector3(2.6, gy(2.6, 6.4), 6.4), PI + 0.35)
+		return
 	var scene: PackedScene = load("res://assets/models/quaternius/characters/Female_Casual.glb")
 	var ch := scene.instantiate()
 	var s := 1.72 / 4.65
@@ -805,6 +1014,16 @@ func _build_camera() -> void:
 		cam.fov = 58.0
 		cam.position = Vector3(4.6, gy(4.6, 11.6) + 2.3, 11.6)
 		cam.look_at(Vector3(-0.8, 1.3, -3.0))
+	elif view == 3:
+		# personnage de face
+		cam.fov = 38.0
+		cam.position = Vector3(1.5, gy(1.5, 3.6) + 1.25, 3.6)
+		cam.look_at(Vector3(2.6, gy(2.6, 6.4) + 1.05, 6.4))
+	elif view == 2:
+		# gros plan sur le personnage
+		cam.fov = 40.0
+		cam.position = Vector3(4.4, gy(4.4, 9.6) + 1.5, 9.6)
+		cam.look_at(Vector3(2.6, gy(2.6, 6.4) + 1.0, 6.4))
 	else:
 		cam.fov = 50.0
 		cam.position = Vector3(-5.6, gy(-5.6, 9.4) + 1.7, 9.4)

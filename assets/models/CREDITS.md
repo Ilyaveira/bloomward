@@ -12,3 +12,4 @@ Tous les modèles du dossier `assets/models/quaternius/` sont de **Quaternius** 
 
 - Les sites quaternius.com et kenney.nl n'étaient pas joignables depuis l'environnement de développement. Les fichiers sources (.fbx, .blend) ont été pris dans le dépôt public https://github.com/beep2bleep/FreeAssetsByKenneyNLandQuaternius (commit `dea756b`, 2019), qui redistribue les packs gratuits de Quaternius avec leur fichier `License.txt` d'origine.
 - Conversion en `.glb` avec Blender (module Python `bpy` 5.2) : import, application des transformations, export glTF binaire avec animations. Les matériaux d'origine sont remplacés dans le jeu par l'ombrage maison (`scripts/style.gd`).
+- Les quatre personnages (`characters/*.glb`) ont été modifiés à la conversion pour ne plus paraître facettés : normales d'origine ignorées (`use_custom_normals=False`), faces lissées, une subdivision de surface (niveau 1) appliquée avant l'armature. La licence CC0 autorise ces modifications.
