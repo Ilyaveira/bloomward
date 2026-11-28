@@ -19,7 +19,9 @@ void vertex() {
 	float back = smoothstep(-0.05, 0.22, -VERTEX.z);
 	float side = VERTEX.x;
 	VERTEX.z -= w * (motion * 0.20 * (0.35 + 0.65 * back) + sin(TIME * 2.3 + side * 7.0) * 0.012 * (1.0 + motion * 2.5));
-	VERTEX.y += w * motion * 0.06 * back;
+	// la cape se soulève un peu derrière et retombe à chaque pas
+	VERTEX.y += w * motion * (0.06 * back + 0.028 * sin(2.0 * stride - 0.8));
+	VERTEX.z -= w * motion * 0.05 * back * sin(2.0 * stride - 1.3);
 	VERTEX.x += w * sin(TIME * 1.7 + ly * 5.0 + stride) * 0.010 * (1.0 + motion * 3.0);
 	VERTEX.x *= 1.0 + w * motion * 0.06 * sin(stride * 2.0 + side * 3.0);
 }

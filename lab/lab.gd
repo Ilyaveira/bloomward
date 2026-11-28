@@ -50,8 +50,8 @@ const PALETTES := [
 		"shirt": Color(0.94, 0.45, 0.38),
 	},
 	{ # atmosphère
-		"c1": Color(0.26, 0.50, 0.24), "c2": Color(0.40, 0.62, 0.26), "c3": Color(0.62, 0.70, 0.30),
-		"sand": Color(0.82, 0.70, 0.50), "rock": Color(0.56, 0.47, 0.44), "tip": Color(0.60, 0.76, 0.30),
+		"c1": Color(0.20, 0.38, 0.22), "c2": Color(0.30, 0.47, 0.25), "c3": Color(0.47, 0.52, 0.29),
+		"sand": Color(0.82, 0.70, 0.50), "rock": Color(0.56, 0.47, 0.44), "tip": Color(0.50, 0.62, 0.33),
 		"stone": Color(0.80, 0.72, 0.62), "stone_top": Color(0.92, 0.86, 0.76), "moss": Color(0.40, 0.58, 0.26),
 		"trunk": Color(0.30, 0.20, 0.18), "trunk_top": Color(0.44, 0.30, 0.24),
 		"leaf_dark": [Color(0.20, 0.42, 0.20), Color(0.28, 0.48, 0.18), Color(0.74, 0.36, 0.14)],
@@ -89,6 +89,10 @@ func _ready() -> void:
 	elif style == 2:
 		_build_ink_tufts()
 	_build_flowers()
+	if style == 3:
+		_build_reeds()
+		_build_lilies()
+		_build_light_effects()
 	_build_character()
 	_build_post()
 	_build_camera()
@@ -200,15 +204,34 @@ func _build_environment() -> void:
 		env.ssao_radius = 2.2
 		env.ssao_intensity = 2.2
 		env.ssao_power = 1.3
+		# halo doux et large autour des lumières : c'est lui qui donne l'air de rêve
 		env.glow_enabled = true
-		env.glow_intensity = 0.75
-		env.glow_bloom = 0.10
-		env.glow_hdr_threshold = 0.95
+		env.glow_intensity = 0.9
+		env.glow_bloom = 0.14
+		env.glow_hdr_threshold = 0.88
+		env.set_glow_level(1, 0.0)
+		env.set_glow_level(2, 0.6)
+		env.set_glow_level(3, 1.0)
+		env.set_glow_level(4, 0.8)
+		env.set_glow_level(5, 1.0)
+		env.set_glow_level(6, 0.7)
+		env.ssr_enabled = true
+		env.ssr_max_steps = 48
+		env.ssr_fade_in = 0.2
+		env.ssr_fade_out = 2.0
+		env.ssr_depth_tolerance = 0.4
+		# étalonnage : ombres légèrement relevées et violettes, hautes lumières crème
+		var grade := Gradient.new()
+		grade.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+		grade.colors = PackedColorArray([Color(0.022, 0.020, 0.042), Color(0.50, 0.495, 0.505), Color(1.0, 0.985, 0.955)])
+		var grade_tex := GradientTexture1D.new()
+		grade_tex.gradient = grade
+		env.adjustment_color_correction = grade_tex
 		env.fog_enabled = true
 		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 		env.fog_sky_affect = 0.0
 		env.volumetric_fog_enabled = true
-		env.volumetric_fog_anisotropy = 0.78
+		env.volumetric_fog_anisotropy = 0.82
 		env.volumetric_fog_length = 90.0
 		env.volumetric_fog_sky_affect = 0.0
 		env.volumetric_fog_ambient_inject = 0.2
@@ -230,37 +253,38 @@ func _build_environment() -> void:
 			env.fog_density = 0.0045
 			env.fog_aerial_perspective = 0.5
 			env.fog_sun_scatter = 0.3
-			env.volumetric_fog_density = 0.011
-			env.volumetric_fog_albedo = Color(1.0, 0.86, 0.68)
-			env.adjustment_saturation = 1.22
-			env.adjustment_contrast = 1.10
+			env.volumetric_fog_density = 0.012
+			env.volumetric_fog_albedo = Color(1.0, 0.86, 0.70)
+			env.adjustment_saturation = 1.20
+			env.adjustment_contrast = 1.06
 			sun.rotation_degrees = Vector3(-18, 150, 0)
-			sun.light_color = Color(1.0, 0.78, 0.50)
-			sun.light_energy = 1.9
-			sun.light_volumetric_fog_energy = 2.2
+			sun.light_color = Color(1.0, 0.78, 0.52)
+			sun.light_energy = 1.8
+			sun.light_volumetric_fog_energy = 3.0
 		else:
 			# plein jour, air limpide, lointains bleutés
-			sm.set_shader_parameter("top_color", Color(0.16, 0.44, 0.86))
-			sm.set_shader_parameter("mid_color", Color(0.50, 0.74, 0.94))
-			sm.set_shader_parameter("horizon_color", Color(0.86, 0.94, 0.96))
-			sm.set_shader_parameter("cloud_light", Color(1.0, 0.99, 0.96))
-			sm.set_shader_parameter("cloud_shade", Color(0.72, 0.78, 0.90))
+			# matin doux : ciel pastel, horizon pêche, air laiteux
+			sm.set_shader_parameter("top_color", Color(0.30, 0.50, 0.84))
+			sm.set_shader_parameter("mid_color", Color(0.66, 0.78, 0.94))
+			sm.set_shader_parameter("horizon_color", Color(0.99, 0.88, 0.82))
+			sm.set_shader_parameter("cloud_light", Color(1.0, 0.97, 0.94))
+			sm.set_shader_parameter("cloud_shade", Color(0.76, 0.74, 0.90))
 			sm.set_shader_parameter("cloud_cover", 0.56)
-			sm.set_shader_parameter("halo", 0.35)
-			env.ambient_light_color = Color(0.55, 0.66, 0.95)
-			env.ambient_light_energy = 0.80
-			env.fog_light_color = Color(0.72, 0.86, 0.96)
+			sm.set_shader_parameter("halo", 0.5)
+			env.ambient_light_color = Color(0.60, 0.64, 0.92)
+			env.ambient_light_energy = 0.78
+			env.fog_light_color = Color(0.84, 0.86, 0.97)
 			env.fog_density = 0.008
 			env.fog_aerial_perspective = 0.6
-			env.fog_sun_scatter = 0.15
-			env.volumetric_fog_density = 0.010
-			env.volumetric_fog_albedo = Color(0.92, 0.97, 1.0)
-			env.adjustment_saturation = 1.18
+			env.fog_sun_scatter = 0.2
+			env.volumetric_fog_density = 0.008
+			env.volumetric_fog_albedo = Color(0.98, 0.95, 0.98)
+			env.adjustment_saturation = 1.12
 			env.adjustment_contrast = 1.06
-			sun.rotation_degrees = Vector3(-44, -52, 0)
-			sun.light_color = Color(1.0, 0.94, 0.80)
-			sun.light_energy = 1.12
-			sun.light_volumetric_fog_energy = 1.5
+			sun.rotation_degrees = Vector3(-40, -52, 0)
+			sun.light_color = Color(1.0, 0.92, 0.80)
+			sun.light_energy = 1.05
+			sun.light_volumetric_fog_energy = 2.2
 	elif style == 1:
 		sm.shader = preload("res://lab/sky_b.gdshader")
 		env.ambient_light_color = Color(0.66, 0.72, 0.88)
@@ -322,8 +346,12 @@ func _build_ground() -> void:
 
 func _build_water() -> void:
 	var m := ShaderMaterial.new()
-	m.shader = preload("res://lab/water.gdshader")
-	m.set_shader_parameter("mode", 0 if style == 3 else style)
+	m.shader = preload("res://lab/water_d.gdshader") if style == 3 else preload("res://lab/water.gdshader")
+	if style == 3:
+		m.set_shader_parameter("sand", pal["sand"])
+		m.set_shader_parameter("sparkle", 1.6 if time == 0 else 1.0)
+	else:
+		m.set_shader_parameter("mode", style)
 	m.set_shader_parameter("ground_tex", ground_tex)
 	m.set_shader_parameter("extent", EXTENT)
 	m.set_shader_parameter("noise_tex", noise_tex)
@@ -988,6 +1016,9 @@ func _meadow(count: int, radius: float, focus: Vector3) -> PackedVector3Array:
 	return pts
 
 func _build_grass() -> void:
+	if style == 3:
+		_build_grass_d()
+		return
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for b in 7:
@@ -1063,6 +1094,9 @@ func _build_ink_tufts() -> void:
 	add_child(mmi)
 
 func _build_flowers() -> void:
+	if style == 3:
+		_build_flowers_d()
+		return
 	var tall := style == 0 or style == 3
 	var mesh := _sphere((0.05 if style == 3 else 0.085) if tall else 0.07, 8)
 	var mat := solid(Color.WHITE)
@@ -1099,9 +1133,259 @@ func _build_flowers() -> void:
 	add_child(mmi)
 
 
+# ---------------------------------------------------------------- prairie, rives et lumière (rendu « atmosphère »)
+
+## Touffe de brins fins et courbés ; `ears` ajoute des épis au bout d'un brin sur deux.
+func _tuft_mesh(blades: int, hmin: float, hmax: float, wmin: float, wmax: float, spread: float, ears: bool) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for b in blades:
+		var a := TAU * b / blades + rng.randf_range(-0.4, 0.4)
+		var lean := Vector3(cos(a), 0, sin(a))
+		var side := Vector3(-sin(a), 0, cos(a))
+		var base := lean * rng.randf_range(0.01, spread)
+		var hh := rng.randf_range(hmin, hmax)
+		var w := rng.randf_range(wmin, wmax)
+		var curve := rng.randf_range(0.10, 0.34) * hh
+		var prev_c := base
+		var prev_w := w
+		var prev_t := 0.0
+		for sgm in 3:
+			var t := float(sgm + 1) / 3.0
+			var c := base + lean * (curve * t * t) + Vector3(0, hh * t * (1.0 - 0.14 * t * t), 0)
+			var ww := w * (1.0 - pow(t, 1.5) * 0.95)
+			for v in [[prev_c - side * prev_w, prev_t], [prev_c + side * prev_w, prev_t], [c + side * ww, t], [prev_c - side * prev_w, prev_t], [c + side * ww, t], [c - side * ww, t]]:
+				st.set_color(Color(v[1], 0, 0))
+				st.set_normal(lean)
+				st.add_vertex(v[0])
+			prev_c = c
+			prev_w = ww
+			prev_t = t
+		if ears and b % 2 == 0:
+			var eh := hh * rng.randf_range(0.07, 0.11)
+			var ew := eh * 0.14
+			for d in [side, lean]:
+				var e0 := prev_c - Vector3(0, eh * 0.15, 0)
+				var e1 := prev_c + Vector3(0, eh * 0.45, 0)
+				var e2 := prev_c + Vector3(0, eh, 0) + lean * eh * 0.15
+				for v in [e0, e1 - d * ew, e1 + d * ew, e1 - d * ew, e2, e1 + d * ew]:
+					st.set_color(Color(1.0, 1.0, 0))
+					st.set_normal(lean)
+					st.add_vertex(v)
+	return st.commit()
+
+func _grass_mat(tip: Color, ear: Color, wind: float) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://lab/grass_d.gdshader")
+	_set_ground_params(mat)
+	mat.set_shader_parameter("tip", tip)
+	mat.set_shader_parameter("ear", ear)
+	mat.set_shader_parameter("wind", wind)
+	return mat
+
+func _scatter(mesh: Mesh, mat: Material, transforms: Array, colors: Array = []) -> MultiMeshInstance3D:
+	mesh.surface_set_material(0, mat)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = not colors.is_empty()
+	mm.mesh = mesh
+	mm.instance_count = transforms.size()
+	for i in transforms.size():
+		mm.set_instance_transform(i, transforms[i])
+		if mm.use_colors:
+			mm.set_instance_color(i, colors[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
+	return mmi
+
+func _build_grass_d() -> void:
+	# la prairie n'est pas tondue : des plages d'herbe haute, d'autres rases
+	var patch := FastNoiseLite.new()
+	patch.seed = SEED + 5
+	patch.frequency = 0.07
+	var tr := []
+	for p in _meadow(70000, 34.0, Vector3(1.5, 0, 3.0)):
+		var s := rng.randf_range(0.8, 1.35)
+		var near := smoothstep(2.6, 7.0, Vector2(p.x, p.z).length())
+		var tall := lerpf(0.55, 1.25, smoothstep(-0.35, 0.45, patch.get_noise_2d(p.x, p.z)))
+		tr.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.6, 1.0) * tall * lerpf(0.5, 1.0, near), s)), p))
+	_scatter(_tuft_mesh(8, 0.22, 0.46, 0.015, 0.028, 0.11, false), _grass_mat(pal["tip"], Color(0.74, 0.64, 0.42), 1.0), tr)
+	# graminées en épis dans les plages hautes
+	var stalks := []
+	for p in _meadow(18000, 36.0, Vector3(1.5, 0, 3.0)):
+		if patch.get_noise_2d(p.x, p.z) < 0.08 or Vector2(p.x, p.z).length() < 5.0 or rng.randf() < 0.45:
+			continue
+		var s := rng.randf_range(0.8, 1.3)
+		stalks.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s), p))
+	_scatter(_tuft_mesh(4, 0.55, 0.85, 0.007, 0.011, 0.07, true), _grass_mat(Color(0.62, 0.64, 0.38), Color(0.78, 0.68, 0.44), 1.5), stalks)
+
+## Fleur : tige, six pétales en coupe, cœur. UV.x désigne la partie, UV.y la hauteur (pour le vent).
+func _flower_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var h := 0.32
+	for d in [Vector3(0.006, 0, 0), Vector3(0, 0, 0.006)]:
+		for v in [[-d, 0.0], [d, 0.0], [d + Vector3(0, h, 0), 1.0], [-d, 0.0], [d + Vector3(0, h, 0), 1.0], [-d + Vector3(0, h, 0), 1.0]]:
+			st.set_uv(Vector2(0.0, v[1]))
+			st.set_normal(Vector3.UP)
+			st.add_vertex(v[0])
+	var tilt := Basis(Vector3(1, 0, 0), 0.5)
+	var top := Vector3(0, h, 0)
+	for k in 6:
+		var a := TAU * k / 6.0
+		var dir := Vector3(cos(a), 0, sin(a))
+		var sd := Vector3(-sin(a), 0, cos(a))
+		var p0 := Vector3.ZERO
+		var p1 := dir * 0.030 + sd * 0.017 + Vector3(0, 0.010, 0)
+		var p2 := dir * 0.030 - sd * 0.017 + Vector3(0, 0.010, 0)
+		var p3 := dir * 0.062 + Vector3(0, 0.004, 0)
+		for v in [p0, p1, p2, p1, p3, p2]:
+			st.set_uv(Vector2(1.0, 1.0))
+			st.set_normal(Vector3.UP)
+			st.add_vertex(top + tilt * v)
+	for k in 8:
+		var a0 := TAU * k / 8.0
+		var a1 := TAU * (k + 1) / 8.0
+		for v in [Vector3(0, 0.014, 0), Vector3(cos(a0), 0, sin(a0)) * 0.016 + Vector3(0, 0.008, 0), Vector3(cos(a1), 0, sin(a1)) * 0.016 + Vector3(0, 0.008, 0)]:
+			st.set_uv(Vector2(2.0, 1.0))
+			st.set_normal(Vector3.UP)
+			st.add_vertex(top + tilt * v)
+	return st.commit()
+
+func _flower_mat() -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://lab/flower_d.gdshader")
+	mat.set_shader_parameter("mode", style)
+	mat.set_shader_parameter("noise_tex", noise_tex)
+	mat.set_shader_parameter("glow", 0.35 if time == 0 else 0.06)
+	return mat
+
+func _build_flowers_d() -> void:
+	var cols: Array = pal["flowers"]
+	var tr := []
+	var colors := []
+	for c in 54:
+		var center := Vector2(rng.randfn() * 9.5 + 1.5, rng.randfn() * 8.5 + 3.0)
+		var col: Color = cols[rng.randi() % cols.size()]
+		for k in rng.randi_range(7, 16):
+			var p := center + Vector2(rng.randfn(), rng.randfn()) * 0.8
+			var y := gy(p.x, p.y)
+			if y < 0.0 or p.length() > 40.0 or p.length() < 3.4:
+				continue
+			var s := rng.randf_range(0.8, 1.35)
+			tr.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s), Vector3(p.x, y, p.y)))
+			colors.append(col.lerp(Color.WHITE, rng.randf_range(0.0, 0.25)))
+	# pâquerettes éparses
+	for p in _meadow(520, 30.0, Vector3(1.5, 0, 3.0)):
+		if Vector2(p.x, p.z).length() < 3.4:
+			continue
+		tr.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.5, 0.8)), p))
+		colors.append(Color(1.0, 0.98, 0.94))
+	_scatter(_flower_mesh(), _flower_mat(), tr, colors)
+
+func _wet(x: float, z: float) -> bool:
+	return Vector2(x, z).length() < 3.6 or Terrain.river_dist(x, z) < 4.5
+
+## Roseaux par bouquets le long des rives.
+func _build_reeds() -> void:
+	var clump := FastNoiseLite.new()
+	clump.seed = SEED + 9
+	clump.frequency = 0.16
+	var tr := []
+	var tries := 0
+	while tr.size() < 380 and tries < 120000:
+		tries += 1
+		var x := rng.randf_range(-44.0, 44.0)
+		var z := rng.randf_range(-44.0, 44.0)
+		if Vector2(x, z).length() < 3.9 or not _wet(x, z):
+			continue
+		var y := gy(x, z)
+		if y > -0.02 or y < -0.30 or clump.get_noise_2d(x, z) < 0.05:
+			continue
+		var s := rng.randf_range(0.75, 1.25)
+		tr.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * s), Vector3(x, y, z)))
+	var mat := _grass_mat(Color(0.52, 0.60, 0.32), Color(0.36, 0.24, 0.16), 0.8)
+	mat.set_shader_parameter("tint_amount", 0.3)
+	_scatter(_tuft_mesh(7, 0.75, 1.30, 0.012, 0.020, 0.10, true), mat, tr)
+
+## Nénuphars sur les eaux calmes, quelques-uns en fleur.
+func _build_lilies() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in 13:
+		var a0 := 0.25 + (TAU - 0.5) * k / 13.0
+		var a1 := 0.25 + (TAU - 0.5) * (k + 1) / 13.0
+		for v in [Vector3.ZERO, Vector3(cos(a1), 0, sin(a1)), Vector3(cos(a0), 0, sin(a0))]:
+			st.set_normal(Vector3.UP)
+			st.add_vertex(v)
+	var pad := st.commit()
+	var clump := FastNoiseLite.new()
+	clump.seed = SEED + 12
+	clump.frequency = 0.22
+	var tr := []
+	var blooms := []
+	var bloom_cols := []
+	var tries := 0
+	while tr.size() < 70 and tries < 60000:
+		tries += 1
+		var x := rng.randf_range(-40.0, 40.0)
+		var z := rng.randf_range(-40.0, 40.0)
+		if not _wet(x, z) or gy(x, z) > -0.33 or clump.get_noise_2d(x, z) < 0.12:
+			continue
+		var s := rng.randf_range(0.13, 0.25)
+		tr.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, 1.0, s)), Vector3(x, -0.192 + tr.size() * 0.0002, z)))
+		if tr.size() % 6 == 0:
+			blooms.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * 1.9), Vector3(x + s * 0.5, -0.17 - 0.32 * 1.9, z)))
+			bloom_cols.append(Color(1.0, 0.86, 0.90) if blooms.size() % 2 == 0 else Color(1.0, 0.98, 0.94))
+	var pm := solid(Color(0.20, 0.40, 0.24))
+	pm.set_shader_parameter("brush", 0.25)
+	_scatter(pad, pm, tr)
+	if not blooms.is_empty():
+		_scatter(_flower_mesh(), _flower_mat(), blooms, bloom_cols)
+
+## Ambiance de rêve : brume basse traversée par le soleil, poussières de lumière, lucioles le soir.
+func _build_light_effects() -> void:
+	for f in [[Vector3(0, 0.55, 0), Vector3(110, 2.6, 110), 0.015, RenderingServer.FOG_VOLUME_SHAPE_BOX], [Vector3(0, 0.5, -1.0), Vector3(15, 2.4, 15), 0.04, RenderingServer.FOG_VOLUME_SHAPE_ELLIPSOID]]:
+		var fv := FogVolume.new()
+		fv.shape = f[3]
+		fv.size = f[1]
+		fv.position = f[0]
+		var fm := FogMaterial.new()
+		fm.density = f[2] * (1.25 if time == 0 else 1.0)
+		fm.albedo = Color(1.0, 0.90, 0.78) if time == 0 else Color(0.96, 0.95, 1.0)
+		fm.height_falloff = 1.2
+		fm.edge_fade = 0.4
+		fv.material = fm
+		add_child(fv)
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1, 1)
+	var sets := [[760, 30.0, 0.3, 4.2, Color(1.0, 0.86, 0.56) if time == 0 else Color(1.0, 0.97, 0.88), 0.026 if time == 0 else 0.020, 2.4 if time == 0 else 1.5, 1.0, 0.0]]
+	if time == 0:
+		sets.append([120, 24.0, 0.25, 1.5, Color(0.82, 1.0, 0.46), 0.05, 3.2, 1.6, 1.0])
+	for st in sets:
+		var tr := []
+		for i in st[0]:
+			var a := rng.randf() * TAU
+			var r: float = sqrt(rng.randf()) * st[1]
+			var x := sin(a) * r + 1.0
+			var z := cos(a) * r + 2.0
+			tr.append(Transform3D(Basis(), Vector3(x, maxf(gy(x, z), -0.2) + rng.randf_range(st[2], st[3]), z)))
+		var mat := ShaderMaterial.new()
+		mat.shader = preload("res://lab/mote.gdshader")
+		mat.set_shader_parameter("color", st[4])
+		mat.set_shader_parameter("size", st[5])
+		mat.set_shader_parameter("energy", st[6])
+		mat.set_shader_parameter("drift", st[7])
+		mat.set_shader_parameter("blink", st[8])
+		var mmi := _scatter(quad.duplicate(), mat, tr)
+		mmi.extra_cull_margin = 4.0
+
 # ---------------------------------------------------------------- personnage, caméra, finition
 
 var walk := 0.0
+var phase := -1.0
 var _perso: Node3D
 
 func _build_caped(pos: Vector3, yaw: float) -> void:
@@ -1115,6 +1399,9 @@ func _build_caped(pos: Vector3, yaw: float) -> void:
 
 func _process(delta: float) -> void:
 	if _perso != null and walk > 0.0:
+		if phase >= 0.0:
+			_perso.pose(phase, walk / 3.4)
+			return
 		_perso.animate(delta, walk)
 		if view == 4:
 			# travelling : le personnage traverse la prairie, la caméra l'accompagne
@@ -1199,6 +1486,12 @@ func _build_camera() -> void:
 		cam.fov = 38.0
 		cam.position = Vector3(1.5, gy(1.5, 3.6) + 1.25, 3.6)
 		cam.look_at(Vector3(2.6, gy(2.6, 6.4) + 1.05, 6.4))
+	elif view == 5:
+		# au ras de l'eau, le long du ruisseau
+		var rx := Terrain.river_x(-9.0)
+		cam.fov = 52.0
+		cam.position = Vector3(rx + 4.2, 0.75, -6.5)
+		cam.look_at(Vector3(Terrain.river_x(-13.0) - 0.5, -0.1, -13.0))
 	elif view == 2:
 		# gros plan sur le personnage
 		cam.fov = 40.0
