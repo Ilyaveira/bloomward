@@ -62,6 +62,9 @@ func _ready() -> void:
 		var lv := args.find("--lab-view")
 		if lv >= 0 and lv + 1 < args.size():
 			lab.view = int(args[lv + 1])
+		var lt := args.find("--lab-time")
+		if lt >= 0 and lt + 1 < args.size():
+			lab.time = int(args[lt + 1])
 		add_child(lab)
 		return
 	if "--solo" in args:

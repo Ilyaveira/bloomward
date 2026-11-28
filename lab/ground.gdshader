@@ -12,7 +12,7 @@ void fragment() {
 	float slope = 1.0 - wnrm.y;
 	if (ground_mode == 0) {
 		float brush = texture(noise_tex, vec2(wpos.x * 0.55 + wpos.z * 0.25, wpos.z * 0.12)).r;
-		c *= 0.88 + 0.26 * brush;
+		c *= 1.0 + (brush - 0.5) * 0.26 * ground_brush;
 		c = mix(c, rock, smoothstep(0.22, 0.42, slope + (brush - 0.5) * 0.12));
 		c = mix(c, sand, smoothstep(0.06, -0.14, wpos.y + (brush - 0.5) * 0.1));
 	} else {

@@ -5,6 +5,7 @@ uniform vec3 c2 : source_color = vec3(0.50, 0.70, 0.28);
 uniform vec3 c3 : source_color = vec3(0.80, 0.78, 0.35);
 uniform vec3 sand : source_color = vec3(0.85, 0.78, 0.60);
 uniform int ground_mode = 0;
+uniform float ground_brush = 1.0;
 
 vec3 ground_col(vec3 p) {
 	float n1 = texture(noise_tex, p.xz * 0.021).r;

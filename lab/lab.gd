@@ -8,11 +8,13 @@ const EXTENT := 60.0
 
 var style := 0
 var view := 0
+var time := 0
 var noise_tex: NoiseTexture2D
 var ground_tex: ImageTexture
 var pal := {}
 var rng := RandomNumberGenerator.new()
 
+## 3 = « atmosphère » : formes simples, lumière et brume très travaillées (références du moodboard).
 const PALETTES := [
 	{ # peinture
 		"c1": Color(0.24, 0.50, 0.22), "c2": Color(0.44, 0.66, 0.24), "c3": Color(0.78, 0.76, 0.32),
@@ -47,6 +49,18 @@ const PALETTES := [
 		"flowers": [Color(1.0, 1.0, 1.0), Color(0.98, 0.60, 0.55), Color(1.0, 0.88, 0.45)],
 		"shirt": Color(0.94, 0.45, 0.38),
 	},
+	{ # atmosphère
+		"c1": Color(0.26, 0.50, 0.24), "c2": Color(0.40, 0.62, 0.26), "c3": Color(0.62, 0.70, 0.30),
+		"sand": Color(0.82, 0.70, 0.50), "rock": Color(0.56, 0.47, 0.44), "tip": Color(0.60, 0.76, 0.30),
+		"stone": Color(0.80, 0.72, 0.62), "stone_top": Color(0.92, 0.86, 0.76), "moss": Color(0.40, 0.58, 0.26),
+		"trunk": Color(0.30, 0.20, 0.18), "trunk_top": Color(0.44, 0.30, 0.24),
+		"leaf_dark": [Color(0.20, 0.42, 0.20), Color(0.28, 0.48, 0.18), Color(0.74, 0.36, 0.14)],
+		"leaf_light": [Color(0.52, 0.72, 0.26), Color(0.66, 0.78, 0.28), Color(0.98, 0.68, 0.26)],
+		"pine_dark": Color(0.07, 0.25, 0.24), "pine_light": Color(0.20, 0.46, 0.32),
+		"shallow": Color(0.40, 0.78, 0.78), "deep": Color(0.08, 0.36, 0.50), "foam": Color(0.96, 0.98, 1.0),
+		"flowers": [Color(1.0, 0.97, 0.90), Color(0.98, 0.62, 0.50), Color(1.0, 0.84, 0.32), Color(0.72, 0.62, 0.96)],
+		"shirt": Color(0.90, 0.40, 0.28),
+	},
 ]
 
 func _ready() -> void:
@@ -70,7 +84,7 @@ func _ready() -> void:
 	_build_ruins()
 	_build_rocks()
 	_build_trees()
-	if style == 0:
+	if style == 0 or style == 3:
 		_build_grass()
 	elif style == 2:
 		_build_ink_tufts()
@@ -91,14 +105,15 @@ func solid(color: Color, top: Variant = null, low: float = 0.0, high: float = 1.
 	m.set_shader_parameter("grad_low", low)
 	m.set_shader_parameter("grad_high", high)
 	m.set_shader_parameter("moss", pal["moss"])
-	m.set_shader_parameter("moss_amount", moss_amount if style == 0 else 0.0)
+	m.set_shader_parameter("moss_amount", moss_amount if style == 0 else (moss_amount * 0.6 if style == 3 else 0.0))
 	m.set_shader_parameter("noise_tex", noise_tex)
-	m.set_shader_parameter("brush", 0.35 if style == 0 else 0.0)
+	m.set_shader_parameter("brush", 0.35 if style == 0 else (0.10 if style == 3 else 0.0))
 	return m
 
 func _set_ground_params(m: ShaderMaterial) -> void:
 	m.set_shader_parameter("mode", style)
-	m.set_shader_parameter("ground_mode", style)
+	m.set_shader_parameter("ground_mode", 0 if style == 3 else style)
+	m.set_shader_parameter("ground_brush", 0.35 if style == 3 else 1.0)
 	m.set_shader_parameter("noise_tex", noise_tex)
 	for k in ["c1", "c2", "c3", "sand"]:
 		m.set_shader_parameter(k, pal[k])
@@ -176,6 +191,76 @@ func _build_environment() -> void:
 		sun.light_energy = 1.25
 		sun.shadow_blur = 2.5
 		sun.light_volumetric_fog_energy = 1.8
+	elif style == 3:
+		sm.shader = preload("res://lab/sky_d.gdshader")
+		sm.set_shader_parameter("cloud_tex", noise_tex)
+		env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+		env.tonemap_white = 1.5
+		env.ssao_enabled = true
+		env.ssao_radius = 2.2
+		env.ssao_intensity = 2.2
+		env.ssao_power = 1.3
+		env.glow_enabled = true
+		env.glow_intensity = 0.75
+		env.glow_bloom = 0.10
+		env.glow_hdr_threshold = 0.95
+		env.fog_enabled = true
+		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+		env.fog_sky_affect = 0.0
+		env.volumetric_fog_enabled = true
+		env.volumetric_fog_anisotropy = 0.78
+		env.volumetric_fog_length = 90.0
+		env.volumetric_fog_sky_affect = 0.0
+		env.volumetric_fog_ambient_inject = 0.2
+		env.adjustment_enabled = true
+		sun.shadow_blur = 2.0
+		sun.directional_shadow_max_distance = 110.0
+		if time == 0:
+			# fin d'après-midi dorée, soleil bas presque en face
+			sm.set_shader_parameter("top_color", Color(0.24, 0.42, 0.72))
+			sm.set_shader_parameter("mid_color", Color(0.72, 0.74, 0.80))
+			sm.set_shader_parameter("horizon_color", Color(1.0, 0.80, 0.52))
+			sm.set_shader_parameter("cloud_light", Color(1.0, 0.86, 0.66))
+			sm.set_shader_parameter("cloud_shade", Color(0.62, 0.56, 0.74))
+			sm.set_shader_parameter("cloud_cover", 0.52)
+			sm.set_shader_parameter("halo", 0.9)
+			env.ambient_light_color = Color(0.60, 0.62, 0.90)
+			env.ambient_light_energy = 0.95
+			env.fog_light_color = Color(1.0, 0.78, 0.56)
+			env.fog_density = 0.0045
+			env.fog_aerial_perspective = 0.5
+			env.fog_sun_scatter = 0.3
+			env.volumetric_fog_density = 0.011
+			env.volumetric_fog_albedo = Color(1.0, 0.86, 0.68)
+			env.adjustment_saturation = 1.22
+			env.adjustment_contrast = 1.10
+			sun.rotation_degrees = Vector3(-18, 150, 0)
+			sun.light_color = Color(1.0, 0.78, 0.50)
+			sun.light_energy = 1.9
+			sun.light_volumetric_fog_energy = 2.2
+		else:
+			# plein jour, air limpide, lointains bleutés
+			sm.set_shader_parameter("top_color", Color(0.16, 0.44, 0.86))
+			sm.set_shader_parameter("mid_color", Color(0.50, 0.74, 0.94))
+			sm.set_shader_parameter("horizon_color", Color(0.86, 0.94, 0.96))
+			sm.set_shader_parameter("cloud_light", Color(1.0, 0.99, 0.96))
+			sm.set_shader_parameter("cloud_shade", Color(0.72, 0.78, 0.90))
+			sm.set_shader_parameter("cloud_cover", 0.56)
+			sm.set_shader_parameter("halo", 0.35)
+			env.ambient_light_color = Color(0.55, 0.66, 0.95)
+			env.ambient_light_energy = 0.80
+			env.fog_light_color = Color(0.72, 0.86, 0.96)
+			env.fog_density = 0.008
+			env.fog_aerial_perspective = 0.6
+			env.fog_sun_scatter = 0.15
+			env.volumetric_fog_density = 0.010
+			env.volumetric_fog_albedo = Color(0.92, 0.97, 1.0)
+			env.adjustment_saturation = 1.18
+			env.adjustment_contrast = 1.06
+			sun.rotation_degrees = Vector3(-44, -52, 0)
+			sun.light_color = Color(1.0, 0.94, 0.80)
+			sun.light_energy = 1.12
+			sun.light_volumetric_fog_energy = 1.5
 	elif style == 1:
 		sm.shader = preload("res://lab/sky_b.gdshader")
 		env.ambient_light_color = Color(0.66, 0.72, 0.88)
@@ -238,7 +323,7 @@ func _build_ground() -> void:
 func _build_water() -> void:
 	var m := ShaderMaterial.new()
 	m.shader = preload("res://lab/water.gdshader")
-	m.set_shader_parameter("mode", style)
+	m.set_shader_parameter("mode", 0 if style == 3 else style)
 	m.set_shader_parameter("ground_tex", ground_tex)
 	m.set_shader_parameter("extent", EXTENT)
 	m.set_shader_parameter("noise_tex", noise_tex)
@@ -420,6 +505,9 @@ func _tree(pos: Vector3, scale_f: float, kind: int) -> void:
 	var dark: Color = pal["leaf_dark"][k]
 	var light: Color = pal["leaf_light"][k]
 	var trunk_mat := solid(pal["trunk"], pal["trunk_top"], 0.0, h)
+	if style == 3 and kind % 7 >= 2:
+		_pine(root, trunk_mat)
+		return
 	if style == 1 and kind % 3 == 0:
 		# épure : cyprès en cône
 		var tm := MeshInstance3D.new()
@@ -456,7 +544,17 @@ func _tree(pos: Vector3, scale_f: float, kind: int) -> void:
 		var a := TAU * i / (count - 1) + rng.randf_range(-0.3, 0.3)
 		var off := Vector3(cos(a), 0, sin(a)) * rng.randf_range(0.9, 1.5) if i > 0 else Vector3.ZERO
 		blobs.append([top + off + Vector3(0, 0.5 + rng.randf_range(-0.2, 0.5) + (0.9 if i == 0 else 0.0), 0), rng.randf_range(1.0, 1.45)])
-	if style == 0:
+	if style == 3:
+		# feuillage en masses rondes, dégradé du sombre (dessous) au clair (dessus)
+		for blob in blobs:
+			var s3 := MeshInstance3D.new()
+			var br: float = blob[1]
+			s3.mesh = _sphere(br, 24)
+			s3.material_override = solid(dark, light, -br * 0.7, br * 0.9)
+			s3.position = blob[0]
+			s3.scale = Vector3(1.0, 0.82, 1.0)
+			root.add_child(s3)
+	elif style == 0:
 		var inner_mat := solid(dark.darkened(0.25))
 		for blob in blobs:
 			var s := MeshInstance3D.new()
@@ -483,6 +581,27 @@ func _tree(pos: Vector3, scale_f: float, kind: int) -> void:
 			s.position = blob[0]
 			root.add_child(s)
 
+## Sapin en étages : silhouette découpée, lisible de loin.
+func _pine(root: Node3D, trunk_mat: Material) -> void:
+	var total := rng.randf_range(6.5, 9.5)
+	var tm := MeshInstance3D.new()
+	tm.mesh = _cyl(0.10, 0.22, total * 0.5, 10)
+	tm.material_override = trunk_mat
+	tm.position.y = total * 0.25
+	root.add_child(tm)
+	var tiers := 6
+	var mat := solid(pal["pine_dark"], pal["pine_light"], -0.6, 0.9)
+	for i in tiers:
+		var t := float(i) / (tiers - 1)
+		var r := lerpf(1.9, 0.45, t) * rng.randf_range(0.9, 1.1)
+		var hh := lerpf(2.0, 1.3, t)
+		var cone := MeshInstance3D.new()
+		cone.mesh = _cyl(0.0, r, hh, 9)
+		cone.material_override = mat
+		cone.position = Vector3(rng.randf_range(-0.06, 0.06), lerpf(total * 0.28, total - hh * 0.5, t), rng.randf_range(-0.06, 0.06))
+		cone.rotation = Vector3(rng.randf_range(-0.05, 0.05), rng.randf() * TAU, rng.randf_range(-0.05, 0.05))
+		root.add_child(cone)
+
 func _build_trees() -> void:
 	var spots := [[-9.0, 3.4, 1.15, 0], [-12.5, -7.0, 1.3, 1], [9.6, -7.6, 1.25, 0], [12.0, 2.6, 1.0, 2], [-3.0, -13.5, 1.2, 1],
 		[4.6, -15.0, 1.1, 0], [-15.5, -13.5, 1.4, 0], [15.0, -13.0, 1.3, 1], [-17.0, 4.0, 1.2, 0], [17.5, -3.5, 1.2, 0], [8.8, 8.6, 0.95, 1]]
@@ -490,9 +609,10 @@ func _build_trees() -> void:
 		if Terrain.river_dist(sp[0], sp[1]) < 3.0:
 			continue
 		_tree(Vector3(sp[0], 0, sp[1]), sp[2], sp[3])
-	for i in 46:
+	var far_count := 240 if style == 3 else 46
+	for i in far_count:
 		var a := rng.randf() * TAU
-		var r := rng.randf_range(22.0, 46.0)
+		var r := rng.randf_range(22.0, 46.0 if style != 3 else 70.0)
 		var x := sin(a) * r
 		var z := cos(a) * r
 		if Terrain.river_dist(x, z) < 4.0:
@@ -548,7 +668,7 @@ func _build_grass() -> void:
 	_set_ground_params(mat)
 	mat.set_shader_parameter("tip", pal["tip"])
 	mesh.surface_set_material(0, mat)
-	var pts := _meadow(110000, 34.0, Vector3(1.5, 0, 3.0))
+	var pts := _meadow(110000 if style == 0 else 90000, 34.0, Vector3(1.5, 0, 3.0))
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
@@ -592,7 +712,8 @@ func _build_ink_tufts() -> void:
 	add_child(mmi)
 
 func _build_flowers() -> void:
-	var mesh := _sphere(0.085 if style == 0 else 0.07, 8)
+	var tall := style == 0 or style == 3
+	var mesh := _sphere((0.05 if style == 3 else 0.085) if tall else 0.07, 8)
 	var mat := solid(Color.WHITE)
 	mat.set_shader_parameter("use_instance_color", true)
 	mat.set_shader_parameter("brush", 0.0)
@@ -600,17 +721,17 @@ func _build_flowers() -> void:
 	var cols: Array = pal["flowers"]
 	var transforms := []
 	var colors := []
-	var clusters := 60 if style == 0 else 34
+	var clusters := (44 if style == 3 else 60) if tall else 34
 	for c in clusters:
 		var center := Vector2(rng.randfn() * 9.0 + 1.5, rng.randfn() * 8.0 + 3.0)
 		var col: Color = cols[rng.randi() % cols.size()]
-		var per_cluster: int = rng.randi_range(8, 22) if style == 0 else rng.randi_range(4, 9)
+		var per_cluster: int = (rng.randi_range(6, 14) if style == 3 else rng.randi_range(8, 22)) if tall else rng.randi_range(4, 9)
 		for k in per_cluster:
-			var p := center + Vector2(rng.randfn(), rng.randfn()) * (0.7 if style == 0 else 0.5)
+			var p := center + Vector2(rng.randfn(), rng.randfn()) * (0.7 if tall else 0.5)
 			var y := gy(p.x, p.y)
 			if y < 0.0 or p.length() > 40.0:
 				continue
-			var hgt := rng.randf_range(0.26, 0.40) if style == 0 else 0.07
+			var hgt := rng.randf_range(0.26, 0.40) if tall else 0.07
 			transforms.append(Transform3D(Basis().scaled(Vector3(1, 0.7, 1) * rng.randf_range(0.8, 1.3)), Vector3(p.x, y + hgt, p.y)))
 			colors.append(col)
 	var mm := MultiMesh.new()
@@ -648,7 +769,7 @@ func _build_character() -> void:
 					col = pal["shirt"]
 				elif src.resource_name == "Skin":
 					col = col.lightened(0.15)
-			if style != 0:
+			if style == 1 or style == 2:
 				col = col.lightened(0.22)
 			var m := solid(Color(col.r, col.g, col.b))
 			m.set_shader_parameter("brush", 0.0)
@@ -661,7 +782,7 @@ func _build_character() -> void:
 				ap.play(n)
 
 func _build_post() -> void:
-	if style == 1:
+	if style == 1 or style == 3:
 		return
 	var quad := QuadMesh.new()
 	quad.size = Vector2(2, 2)
@@ -688,4 +809,12 @@ func _build_camera() -> void:
 		cam.fov = 50.0
 		cam.position = Vector3(-5.6, gy(-5.6, 9.4) + 1.7, 9.4)
 		cam.look_at(Vector3(1.6, 1.5, -5.0))
+	if style == 3:
+		# léger flou des lointains, comme sur une maquette
+		var ca := CameraAttributesPractical.new()
+		ca.dof_blur_far_enabled = true
+		ca.dof_blur_far_distance = 55.0
+		ca.dof_blur_far_transition = 50.0
+		ca.dof_blur_amount = 0.05
+		cam.attributes = ca
 	cam.current = true

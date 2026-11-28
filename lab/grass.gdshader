@@ -13,7 +13,7 @@ void vertex() {
 	VERTEX.z += sway * 0.5 * t * t;
 	gcol = ground_col(root);
 	float brush = texture(noise_tex, vec2(root.x * 0.55 + root.z * 0.25, root.z * 0.12)).r;
-	gcol *= 0.88 + 0.26 * brush;
+	gcol *= 1.0 + (brush - 0.5) * 0.26 * ground_brush;
 	NORMAL = vec3(0.0, 1.0, 0.0);
 }
 void fragment() {
