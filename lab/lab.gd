@@ -354,6 +354,9 @@ func _box(s: Vector3) -> BoxMesh:
 	return b
 
 func _build_ruins() -> void:
+	if style == 3:
+		_build_ruins_worn()
+		return
 	var st := _stone()
 	# margelle du bassin et vasque
 	for i in 14:
@@ -390,6 +393,8 @@ func _build_ruins() -> void:
 		_add(_box(Vector3(rng.randf_range(0.8, 1.4), 0.5, 0.7)), st, bl + Vector3(0, gy(bl.x, bl.z) + 0.2, 0), Vector3(rng.randf_range(-0.1, 0.1), rng.randf() * TAU, 0))
 
 func _rock_mesh(seed_value: int) -> ArrayMesh:
+	if style == 3:
+		return _rock_cut_mesh(seed_value)
 	var s := SphereMesh.new()
 	s.radius = 1.0
 	s.height = 2.0
@@ -421,6 +426,14 @@ func _build_rocks() -> void:
 	var spots := [[-4.2, 3.0, 0.7], [-5.0, 3.6, 0.4], [4.6, 1.6, 0.55], [9.5, -8.5, 1.5], [-12.5, -3.0, 1.2], [1.8, 9.4, 0.5], [-2.6, -9.0, 0.9], [12.5, 4.0, 1.1], [-7.2, 8.5, 0.8]]
 	for sp in spots:
 		_add(meshes[rng.randi() % 3], mat, Vector3(sp[0], gy(sp[0], sp[1]) + sp[2] * 0.25, sp[1]), Vector3(0, rng.randf() * TAU, 0), Vector3.ONE * sp[2])
+		if style == 3:
+			# un ou deux petits blocs au pied du rocher, pour composer un groupe
+			for k in rng.randi_range(1, 2):
+				var a2 := rng.randf() * TAU
+				var s2: float = sp[2] * rng.randf_range(0.32, 0.5)
+				var x2: float = sp[0] + sin(a2) * sp[2] * 1.05
+				var z2: float = sp[1] + cos(a2) * sp[2] * 1.05
+				_add(meshes[rng.randi() % 3], mat, Vector3(x2, gy(x2, z2) + s2 * 0.2, z2), Vector3(0, rng.randf() * TAU, 0), Vector3.ONE * s2)
 	for i in 26:
 		var a := rng.randf() * TAU
 		var r := rng.randf_range(24.0, 44.0)
@@ -428,6 +441,245 @@ func _build_rocks() -> void:
 		var z := cos(a) * r
 		var sc := rng.randf_range(1.2, 3.2)
 		_add(meshes[rng.randi() % 3], mat, Vector3(x, gy(x, z) + sc * 0.2, z), Vector3(0, rng.randf() * TAU, 0), Vector3.ONE * sc)
+
+
+# ---------------------------------------------------------------- pierres usées (rendu « atmosphère »)
+
+## Triangle orienté vers l'extérieur d'une forme étoilée autour de l'origine.
+func _tri_out(st: SurfaceTool, a: Vector3, b: Vector3, c: Vector3) -> void:
+	if (c - a).cross(b - a).dot(a + b + c) < 0.0:
+		var t := b
+		b = c
+		c = t
+	st.add_vertex(a)
+	st.add_vertex(b)
+	st.add_vertex(c)
+
+func _axis_coords(hh: float, b: float) -> PackedFloat32Array:
+	var out := PackedFloat32Array([-hh, -hh + b])
+	var span := 2.0 * (hh - b)
+	var cnt := maxi(1, int(ceil(span / 0.3)))
+	for k in range(1, cnt):
+		out.append(-hh + b + span * k / cnt)
+	out.append(hh - b)
+	out.append(hh)
+	return out
+
+func _block_point(p: Vector3, h: Vector3, b: float, n: FastNoiseLite, cuts: Array, size: Vector3, taper_y: float, taper_z: float) -> Vector3:
+	var q := p.clamp(-(h - Vector3.ONE * b), h - Vector3.ONE * b)
+	var dir := (p - q).normalized()
+	var v := q + dir * b
+	v += dir * n.get_noise_3dv(v * 1.4) * 0.028
+	for c in cuts:
+		var over: float = v.dot(c[0]) - c[1]
+		if over > 0.0:
+			v -= c[0] * over
+	v.x *= 1.0 + taper_y * (v.y / size.y) + taper_z * (v.z / size.z)
+	return v.snapped(Vector3.ONE * 0.0005)
+
+## Bloc de pierre taillée : arêtes adoucies, faces légèrement irrégulières, coins ébréchés.
+func _block_mesh(size: Vector3, seed_value: int, chips: int = 2, taper_y: float = 0.0, taper_z: float = 0.0) -> ArrayMesh:
+	var h := size * 0.5
+	var smallest := minf(size.x, minf(size.y, size.z))
+	var b := minf(0.04, smallest * 0.16)
+	var n := FastNoiseLite.new()
+	n.seed = seed_value
+	n.frequency = 0.9
+	var r := RandomNumberGenerator.new()
+	r.seed = seed_value * 7919 + 13
+	var cuts := []
+	for i in chips:
+		var corner := Vector3(-1.0 if r.randf() < 0.5 else 1.0, 1.0 if r.randf() < 0.8 else -1.0, -1.0 if r.randf() < 0.5 else 1.0)
+		var nrm := (corner + Vector3(r.randf_range(-0.5, 0.5), r.randf_range(-0.3, 0.6), r.randf_range(-0.5, 0.5))).normalized()
+		cuts.append([nrm, (corner * h).dot(nrm) - r.randf_range(0.12, 0.30) * smallest])
+	var coords := [_axis_coords(h.x, b), _axis_coords(h.y, b), _axis_coords(h.z, b)]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(0)
+	for w in 3:
+		var u := (w + 1) % 3
+		var v := (w + 2) % 3
+		var cu: PackedFloat32Array = coords[u]
+		var cv: PackedFloat32Array = coords[v]
+		for sgn in [-1.0, 1.0]:
+			for i in cu.size() - 1:
+				for j in cv.size() - 1:
+					var quad: Array[Vector3] = []
+					for d in [[0, 0], [1, 0], [1, 1], [0, 1]]:
+						var p := Vector3.ZERO
+						p[u] = cu[i + d[0]]
+						p[v] = cv[j + d[1]]
+						p[w] = sgn * h[w]
+						quad.append(_block_point(p, h, b, n, cuts, size, taper_y, taper_z))
+					_tri_out(st, quad[0], quad[1], quad[2])
+					_tri_out(st, quad[0], quad[2], quad[3])
+	st.generate_normals()
+	return st.commit()
+
+## Solide de révolution : le profil [rayon, hauteur] part du centre du dessus, descend par l'extérieur
+## et revient au centre du dessous. `flute` creuse des cannelures, `cut` tranche le dessus en biais.
+func _revolve(profile: Array, segments: int, flute: float = 0.0, cut: Variant = null) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(0)
+	var rows := profile.size()
+	var cols := segments + 1
+	var n := FastNoiseLite.new()
+	n.seed = 77
+	n.frequency = 2.0
+	for j in rows:
+		for i in cols:
+			var a := TAU * (i % segments) / segments
+			var r: float = profile[j][0] * (1.0 - flute * (0.5 + 0.5 * cos(a * 14.0)))
+			var v := Vector3(sin(a) * r, profile[j][1], -cos(a) * r)
+			if cut != null:
+				v.y = minf(v.y, cut[2] + cut[0] * v.x + cut[1] * v.z + n.get_noise_2d(v.x, v.z) * 0.06)
+			st.add_vertex(v)
+	for j in rows - 1:
+		for i in segments:
+			var a0 := j * cols + i
+			var a1 := a0 + 1
+			var b0 := a0 + cols
+			var b1 := a1 + cols
+			st.add_index(a0); st.add_index(b0); st.add_index(a1)
+			st.add_index(a1); st.add_index(b0); st.add_index(b1)
+	st.generate_normals()
+	return st.commit()
+
+## Rocher taillé par grands plans : silhouette franche, facettes larges, arêtes adoucies.
+func _rock_cut_mesh(seed_value: int) -> ArrayMesh:
+	var s := SphereMesh.new()
+	s.radius = 1.0
+	s.height = 2.0
+	s.radial_segments = 36
+	s.rings = 18
+	var arr := s.get_mesh_arrays()
+	var n := FastNoiseLite.new()
+	n.seed = seed_value
+	n.frequency = 0.5
+	var r := RandomNumberGenerator.new()
+	r.seed = seed_value * 104729 + 7
+	var cuts := [[Vector3.DOWN, 0.30]]
+	for i in 10:
+		var nrm := Vector3(r.randf_range(-1.0, 1.0), r.randf_range(-0.15, 1.0), r.randf_range(-1.0, 1.0)).normalized()
+		cuts.append([nrm, r.randf_range(0.52, 0.80)])
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_smooth_group(0)
+	for i in verts.size():
+		var v := verts[i].normalized()
+		v *= 1.0 + n.get_noise_3dv(v * 1.5) * 0.30
+		for c in cuts:
+			var over: float = v.dot(c[0]) - c[1]
+			if over > 0.0:
+				v -= c[0] * over
+		st.add_vertex((v * Vector3(1.0, 0.85, 0.9)).snapped(Vector3.ONE * 0.0005))
+	var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+	for i in idx:
+		st.add_index(i)
+	st.generate_normals()
+	return st.commit()
+
+var _stone_mats: Array = []
+var _block_seed := 100
+
+func _blk(size: Vector3, pos: Vector3, rot: Vector3 = Vector3.ZERO, chips: int = 2, taper_y: float = 0.0, taper_z: float = 0.0) -> MeshInstance3D:
+	_block_seed += 1
+	return _add(_block_mesh(size, _block_seed, chips, taper_y, taper_z), _stone_mats[_block_seed % 3], pos, rot)
+
+func _column_worn(cp: Vector3, h: float, complete: bool) -> void:
+	var g := gy(cp.x, cp.z)
+	_blk(Vector3(1.08, 0.30, 1.08), cp + Vector3(0, g + 0.11, 0), Vector3(0, rng.randf_range(-0.05, 0.05), 0), 1)
+	_add(_revolve([[0.0, 0.17], [0.40, 0.17], [0.43, 0.14], [0.48, 0.10], [0.50, 0.06], [0.50, 0.02], [0.48, 0.0], [0.0, 0.0]], 56), _stone_mats[1], cp + Vector3(0, g + 0.26, 0))
+	var nd := maxi(1, int(round(h / 0.85)))
+	var hd := h / nd
+	var y := g + 0.43
+	for d in nd:
+		var rb: float = lerpf(0.385, 0.325, (y - g) / 4.2)
+		var rt: float = lerpf(0.385, 0.325, (y + hd - g) / 4.2)
+		var cut: Variant = null
+		if not complete and d == nd - 1:
+			cut = [rng.randf_range(-0.5, 0.5), rng.randf_range(0.25, 0.6), hd * 0.78]
+		var mesh := _revolve([[0.0, hd], [rt - 0.025, hd], [rt, hd - 0.025], [rb, 0.025], [rb - 0.025, 0.0], [0.0, 0.0]], 56, 0.05, cut)
+		_add(mesh, _stone_mats[(d + nd) % 3], cp + Vector3(rng.randf_range(-0.012, 0.012), y, rng.randf_range(-0.012, 0.012)), Vector3(0, rng.randf() * TAU, 0))
+		y += hd
+	if complete:
+		_add(_revolve([[0.0, 0.27], [0.50, 0.27], [0.515, 0.25], [0.50, 0.21], [0.44, 0.15], [0.36, 0.07], [0.335, 0.04], [0.335, 0.0], [0.0, 0.0]], 56), _stone_mats[0], Vector3(cp.x, y, cp.z))
+		_blk(Vector3(1.10, 0.20, 1.10), Vector3(cp.x, y + 0.36, cp.z), Vector3(0, rng.randf_range(-0.04, 0.04), 0), 2)
+
+func _build_ruins_worn() -> void:
+	var base: Color = pal["stone"]
+	var top: Color = pal["stone_top"]
+	_stone_mats = [
+		solid(base.darkened(0.07), top.darkened(0.05), -0.4, 0.5, 0.55),
+		solid(base, top, -0.4, 0.5, 0.8),
+		solid(base.lightened(0.05), top.lightened(0.04), -0.4, 0.5, 1.0),
+	]
+	# margelle du bassin : pierres taillées en éventail, inégales, une ou deux déplacées
+	for i in 14:
+		var a := TAU * i / 14.0
+		var p := Vector3(sin(a) * 2.75, 0.0, cos(a) * 2.75)
+		if p.z < -1.5 and absf(p.x) < 1.2:
+			continue
+		var hgt := rng.randf_range(0.36, 0.50)
+		var out := rng.randf_range(-0.03, 0.05) + (0.22 if i == 5 else 0.0)
+		p += p.normalized() * out
+		var tilt := Vector3(rng.randf_range(-0.03, 0.03) - (0.16 if i == 5 else 0.0), a + rng.randf_range(-0.03, 0.03) + (0.12 if i == 5 else 0.0), rng.randf_range(-0.04, 0.04))
+		_blk(Vector3(1.17, hgt, 0.56), p + Vector3(0, gy(p.x, p.z) + hgt * 0.5 - 0.10, 0), tilt, 2 if i % 3 == 0 else 1, 0.0, 0.2)
+	# vasque sur pied
+	_add(_revolve([[0.0, 0.90], [0.30, 0.91], [0.52, 0.97], [0.60, 1.02], [0.67, 1.03], [0.69, 1.00], [0.66, 0.95], [0.54, 0.86], [0.38, 0.78], [0.29, 0.74], [0.26, 0.68], [0.24, 0.42], [0.27, 0.24], [0.38, 0.14], [0.45, 0.10], [0.46, 0.0], [0.0, 0.0]], 48), _stone_mats[2], Vector3(0, gy(0, 0) - 0.02, 0))
+	# arche en plein cintre : piliers en assises, claveaux, clef
+	var ap := Vector3(-6.2, 0, -4.6)
+	var ay := 0.55
+	var ab := Basis(Vector3.UP, ay)
+	var pl: Vector3 = ap + ab * Vector3(-1.55, 0, 0)
+	var pr: Vector3 = ap + ab * Vector3(1.55, 0, 0)
+	var g0 := minf(gy(pl.x, pl.z), gy(pr.x, pr.z)) - 0.06
+	for sx in [-1.55, 1.55]:
+		var y := g0
+		var courses := [[0.32, 1.02], [0.60, 0.80], [0.52, 0.80], [0.66, 0.80], [0.56, 0.80], [0.20, 0.94]]
+		for c in courses:
+			var hgt: float = c[0]
+			var w: float = c[1]
+			var pp: Vector3 = ap + ab * Vector3(sx + rng.randf_range(-0.018, 0.018), 0, rng.randf_range(-0.018, 0.018))
+			_blk(Vector3(w + rng.randf_range(-0.02, 0.02), hgt - 0.015, w + 0.06 + rng.randf_range(-0.02, 0.02)), Vector3(pp.x, y + hgt * 0.5, pp.z), Vector3(0, ay + rng.randf_range(-0.025, 0.025), 0), 1)
+			y += hgt
+	var spring := g0 + 2.86
+	var r_mid := 1.55
+	for k in 9:
+		var phi := PI * (k + 0.5) / 9.0
+		var key := k == 4
+		var thick := 0.92 if key else 0.80
+		var depth := 0.96 if key else 0.86
+		var rr := r_mid + (0.06 if key else 0.0)
+		var m := _blk(Vector3(2.0 * r_mid * tan(PI / 18.0) - 0.022, thick, depth), Vector3.ZERO, Vector3.ZERO, 1, (thick / r_mid) * 0.98)
+		m.basis = ab * Basis(Vector3(0, 0, 1), phi - PI / 2.0)
+		m.position = ap + ab * Vector3(cos(phi) * rr, 0, 0) + Vector3(0, spring + sin(phi) * rr, 0)
+	# reste de mur à côté de l'arche, bloc tombé
+	for wb in [[-2.42, 0.0, 0.62, 0.92], [-2.40, 0.62, 0.50, 0.86], [-3.34, 0.0, 0.56, 0.90], [2.44, 0.0, 0.58, 0.88]]:
+		var wp: Vector3 = ap + ab * Vector3(wb[0], 0, rng.randf_range(-0.03, 0.03))
+		_blk(Vector3(wb[3], wb[2] - 0.015, 0.84), Vector3(wp.x, g0 + wb[1] + wb[2] * 0.5, wp.z), Vector3(0, ay + rng.randf_range(-0.04, 0.04), 0), 2)
+	var fp: Vector3 = ap + ab * Vector3(-3.0, 0, 1.5)
+	_blk(Vector3(0.9, 0.55, 0.8), Vector3(fp.x, gy(fp.x, fp.z) + 0.16, fp.z), Vector3(0.22, 1.9, 0.12), 3)
+	# colonnes en tambours, dont une complète avec son chapiteau
+	_column_worn(Vector3(5.2, 0, -5.4), 3.6, true)
+	_column_worn(Vector3(7.4, 0, -2.6), 1.5, false)
+	_column_worn(Vector3(-9.0, 0, 0.6), 2.4, false)
+	# fût tombé, en deux tambours
+	var fa := Vector3(8.6, gy(8.6, -1.2) + 0.30, -1.2)
+	for d in 2:
+		var mesh := _revolve([[0.0, 1.05], [0.33, 1.05], [0.355, 1.025], [0.36, 0.025], [0.335, 0.0], [0.0, 0.0]], 56, 0.05, [0.3, -0.4, 0.9] if d == 1 else null)
+		var fm := _add(mesh, _stone_mats[d + 1], Vector3.ZERO)
+		fm.basis = Basis(Vector3.UP, 0.7 + d * 0.16) * Basis(Vector3.RIGHT, PI / 2.0)
+		fm.position = fa + Basis(Vector3.UP, 0.7) * Vector3(0, 0, -1.1 + d * 1.2) + Vector3(d * 0.12, 0, 0)
+	# blocs épars à demi enfouis et petits éclats
+	for bl in [Vector3(-3.4, 0, -6.6), Vector3(-8.4, 0, -6.4), Vector3(3.2, 0, -7.6), Vector3(6.3, 0, 4.2)]:
+		_blk(Vector3(rng.randf_range(0.8, 1.4), 0.55, 0.72), bl + Vector3(0, gy(bl.x, bl.z) + 0.14, 0), Vector3(rng.randf_range(-0.14, 0.14), rng.randf() * TAU, rng.randf_range(-0.10, 0.10)), 3)
+	var chip_meshes := [_rock_cut_mesh(11), _rock_cut_mesh(12)]
+	for c in [Vector3(-7.9, 0, -3.4), Vector3(-4.6, 0, -3.3), Vector3(-5.6, 0, -2.9), Vector3(5.9, 0, -4.7), Vector3(4.5, 0, -4.9), Vector3(7.9, 0, -1.8), Vector3(9.4, 0, -0.2), Vector3(-9.6, 0, 1.3), Vector3(-8.4, 0, 0.1), Vector3(3.5, 0, 1.4), Vector3(-3.3, 0, 1.6), Vector3(-2.9, 0, -3.4)]:
+		var sc := rng.randf_range(0.10, 0.24)
+		_add(chip_meshes[rng.randi() % 2], _stone_mats[rng.randi() % 3], c + Vector3(0, gy(c.x, c.z) + sc * 0.15, 0), Vector3(0, rng.randf() * TAU, 0), Vector3.ONE * sc)
 
 
 # ---------------------------------------------------------------- arbres
