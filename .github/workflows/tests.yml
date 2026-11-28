@@ -1,0 +1,20 @@
+name: Tests automatiques
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  autotest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Télécharger Godot 4.5.1
+        run: |
+          cd "$RUNNER_TEMP"
+          curl -sSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.5.1-stable/Godot_v4.5.1-stable_linux.x86_64.zip
+          unzip -q godot.zip
+          chmod +x Godot_v4.5.1-stable_linux.x86_64
+      - name: Jouer l'énigme en solo et à deux
+        run: GODOT="$RUNNER_TEMP/Godot_v4.5.1-stable_linux.x86_64" tools/test_auto.sh
